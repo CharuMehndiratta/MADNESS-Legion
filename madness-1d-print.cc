@@ -40,11 +40,9 @@ struct Arguments {
 
     Color partition_color;
 
-    bool is_refine;
-
     // Constructor
-    Arguments(int _n, int _l, int _max_depth, coord_t _idx, Color _partition_color, bool _is_refine = false)
-        : n(_n), l(_l), max_depth(_max_depth), idx(_idx), partition_color(_partition_color), is_refine(_is_refine)
+    Arguments(int _n, int _l, int _max_depth, coord_t _idx, Color _partition_color)
+        : n(_n), l(_l), max_depth(_max_depth), idx(_idx), partition_color(_partition_color)
     {}
 };
 
@@ -113,7 +111,7 @@ void top_level_task(const Task *task,
     // Any random value will work
     Color partition_color1 = 10;
 
-    Arguments args(0, 0, max_depth, 0, partition_color1, true);
+    Arguments args(0, 0, max_depth, 0, partition_color1);
     srand48_r(seed, &args.gen);
 
     // Launching the refine task
@@ -139,33 +137,6 @@ void top_level_task(const Task *task,
     print_launcher1.add_region_requirement(RegionRequirement(lr1, READ_ONLY, EXCLUSIVE, lr1));
     print_launcher1.add_field(0, FID_X);
     runtime->execute_task(ctx, print_launcher1);
-
-    // Launching the refine task
-    TaskLauncher refine_launcher(REFINE_TASK_ID, TaskArgument(&args, sizeof(Arguments)));
-    refine_launcher.add_region_requirement(RegionRequirement(lr1, WRITE_DISCARD, EXCLUSIVE, lr1));
-    refine_launcher.add_field(0, FID_X);
-    runtime->execute_task(ctx, refine_launcher);
-
-    // Launching another task to print the values of the binary tree nodes
-    TaskLauncher print_launcher(PRINT_TASK_ID, TaskArgument(&args, sizeof(Arguments)));
-    print_launcher.add_region_requirement(RegionRequirement(lr1, READ_ONLY, EXCLUSIVE, lr1));
-    print_launcher.add_field(0, FID_X);
-    runtime->execute_task(ctx, print_launcher);
-
-    // Launching another task to print the values of the binary tree nodes
-    TaskLauncher compress_launcher(COMPRESS_TASK_ID, TaskArgument(&args, sizeof(Arguments)));
-    compress_launcher.add_region_requirement(RegionRequirement(lr1, READ_WRITE, EXCLUSIVE, lr1));
-    compress_launcher.add_field(0, FID_X);
-    runtime->execute_task(ctx, compress_launcher);
-
-    args.is_refine = false;
-
-    // Launching another task to print the values of the binary tree nodes
-    TaskLauncher print_launcher1(PRINT_TASK_ID, TaskArgument(&args, sizeof(Arguments)));
-    print_launcher1.add_region_requirement(RegionRequirement(lr1, READ_ONLY, EXCLUSIVE, lr1));
-    print_launcher1.add_field(0, FID_X);
-    runtime->execute_task(ctx, print_launcher1);
-
 
     // Destroying allocated memory
     runtime->destroy_logical_region(ctx, lr1);
@@ -334,8 +305,8 @@ void refine_task(const Task *task, const std::vector<PhysicalRegion> &regions, C
         assert(lp != LogicalPartition::NO_PART);
         Rect<1> launch_domain(left_sub_tree_color, right_sub_tree_color);
         ArgumentMap arg_map;
-        Arguments for_left_sub_tree (n + 1, l * 2    , max_depth, idx_left_sub_tree, partition_color, true);
-        Arguments for_right_sub_tree(n + 1, l * 2 + 1, max_depth, idx_right_sub_tree, partition_color, true);
+        Arguments for_left_sub_tree (n + 1, l * 2    , max_depth, idx_left_sub_tree, partition_color);
+        Arguments for_right_sub_tree(n + 1, l * 2 + 1, max_depth, idx_right_sub_tree, partition_color);
 
         // Make sure two subtrees use different random number generators
         long int new_seed = 0L;
@@ -395,8 +366,8 @@ void compress_task(const Task *task, const std::vector<PhysicalRegion> &regions,
         Rect<1> launch_domain(left_sub_tree_color, right_sub_tree_color);
         ArgumentMap arg_map;
 
-        Arguments for_left_sub_tree(n + 1, 2 * l, max_depth, idx_left_sub_tree, partition_color, false);
-        Arguments for_right_sub_tree(n + 1, 2 * l + 1, max_depth, idx_right_sub_tree, partition_color, false);
+        Arguments for_left_sub_tree(n + 1, 2 * l, max_depth, idx_left_sub_tree, partition_color);
+        Arguments for_right_sub_tree(n + 1, 2 * l + 1, max_depth, idx_right_sub_tree, partition_color);
 
         arg_map.set_point(left_sub_tree_color, TaskArgument(&for_left_sub_tree, sizeof(Arguments)));
         arg_map.set_point(right_sub_tree_color, TaskArgument(&for_right_sub_tree, sizeof(Arguments)));
@@ -553,8 +524,6 @@ void print_task(const Task *task, const std::vector<PhysicalRegion> &regions, Co
     DomainPoint right_sub_tree_color(Point<1>(2LL));
     Color partition_color = args.partition_color;
 
-    bool is_refine = args.is_refine;
-
     coord_t idx = args.idx;
 
     LogicalRegion lr = regions[0].get_logical_region();
@@ -596,8 +565,8 @@ void print_task(const Task *task, const std::vector<PhysicalRegion> &regions, Co
         Rect<1> launch_domain(left_sub_tree_color, right_sub_tree_color);
         ArgumentMap arg_map;
 
-        Arguments for_left_sub_tree(n + 1, 2 * l, max_depth, idx_left_sub_tree, partition_color, is_refine);
-        Arguments for_right_sub_tree(n + 1, 2 * l + 1, max_depth, idx_right_sub_tree, partition_color, is_refine);
+        Arguments for_left_sub_tree(n + 1, 2 * l, max_depth, idx_left_sub_tree, partition_color);
+        Arguments for_right_sub_tree(n + 1, 2 * l + 1, max_depth, idx_right_sub_tree, partition_color);
 
         arg_map.set_point(left_sub_tree_color, TaskArgument(&for_left_sub_tree, sizeof(Arguments)));
         arg_map.set_point(right_sub_tree_color, TaskArgument(&for_right_sub_tree, sizeof(Arguments)));
