@@ -14,7 +14,9 @@ enum TASK_IDs {
     PRINT_TASK_ID,
     READ_TASK_ID,
     COMPRESS_TASK_ID,
-    COMPRESS_SET_TASK_ID
+    COMPRESS_SET_TASK_ID,
+    GAXPY_TASK_ID,
+    GAXPY_SET_TASK_ID
 };
 
 enum FieldIDs {
@@ -132,6 +134,30 @@ void top_level_task(const Task *task,
     compress_launcher.add_field(0, FID_X);
     runtime->execute_task(ctx, compress_launcher);
 
+    // Launching another task to print the values of the binary tree nodes
+    TaskLauncher print_launcher1(PRINT_TASK_ID, TaskArgument(&args, sizeof(Arguments)));
+    print_launcher1.add_region_requirement(RegionRequirement(lr1, READ_ONLY, EXCLUSIVE, lr1));
+    print_launcher1.add_field(0, FID_X);
+    runtime->execute_task(ctx, print_launcher1);
+
+    // Launching the refine task
+    TaskLauncher refine_launcher(REFINE_TASK_ID, TaskArgument(&args, sizeof(Arguments)));
+    refine_launcher.add_region_requirement(RegionRequirement(lr1, WRITE_DISCARD, EXCLUSIVE, lr1));
+    refine_launcher.add_field(0, FID_X);
+    runtime->execute_task(ctx, refine_launcher);
+
+    // Launching another task to print the values of the binary tree nodes
+    TaskLauncher print_launcher(PRINT_TASK_ID, TaskArgument(&args, sizeof(Arguments)));
+    print_launcher.add_region_requirement(RegionRequirement(lr1, READ_ONLY, EXCLUSIVE, lr1));
+    print_launcher.add_field(0, FID_X);
+    runtime->execute_task(ctx, print_launcher);
+
+    // Launching another task to print the values of the binary tree nodes
+    TaskLauncher compress_launcher(COMPRESS_TASK_ID, TaskArgument(&args, sizeof(Arguments)));
+    compress_launcher.add_region_requirement(RegionRequirement(lr1, READ_WRITE, EXCLUSIVE, lr1));
+    compress_launcher.add_field(0, FID_X);
+    runtime->execute_task(ctx, compress_launcher);
+
     args.is_refine = false;
 
     // Launching another task to print the values of the binary tree nodes
@@ -139,6 +165,7 @@ void top_level_task(const Task *task,
     print_launcher1.add_region_requirement(RegionRequirement(lr1, READ_ONLY, EXCLUSIVE, lr1));
     print_launcher1.add_field(0, FID_X);
     runtime->execute_task(ctx, print_launcher1);
+
 
     // Destroying allocated memory
     runtime->destroy_logical_region(ctx, lr1);
@@ -194,6 +221,17 @@ void set_task(const Task *task,
     else {
         write_acc[args.idx] = 0;
     }
+}
+
+void gaxpy_set_task(const Task *task,
+              const std::vector<PhysicalRegion> &regions,
+              Context ctx, HighLevelRuntime *runtime) {
+
+    SetTaskArgs args = *(const SetTaskArgs *) task->args;
+    assert(regions.size() == 1);
+
+    const FieldAccessor<WRITE_DISCARD, int, 1> write_acc(regions[0], FID_X);
+    write_acc[args.idx] = args.node_value
 }
 
 int read_task(const Task *task,
@@ -316,7 +354,6 @@ void refine_task(const Task *task, const std::vector<PhysicalRegion> &regions, C
     }
 }
 
-
 void compress_task(const Task *task, const std::vector<PhysicalRegion> &regions, Context ctxt, HighLevelRuntime *runtime) {
     Arguments args = task->is_index_space ? *(const Arguments *) task->local_args
     : *(const Arguments *) task->args;
@@ -388,7 +425,118 @@ void compress_task(const Task *task, const std::vector<PhysicalRegion> &regions,
 }
 
 void gaxpy_task(const Task *task, const std::vector<PhysicalRegion> &regions, Context ctx, HighLevelRuntime *runtime) {
-    
+    Arguments args = task->is_index_space ? *(const Arguments *) task->local_args
+    : *(const Arguments *) task->args;
+
+    int n = args.n;
+    int l = args.l;
+    int max_depth = args.max_depth;
+
+    DomainPoint my_sub_tree_color(Point<1>(0LL));
+    DomainPoint left_sub_tree_color(Point<1>(1LL));
+    DomainPoint right_sub_tree_color(Point<1>(2LL));
+    Color partition_color1 = args.partition_color1;
+    Color partition_color2 = args.partition_color2;
+    Color partition_color3;
+
+    coord_t idx = args.idx;
+
+    assert(regions.size() == 3);
+
+    LogicalRegion lr1 = regions[0].get_logical_region();
+    LogicalRegion lr2 = regions[1].get_logical_region();
+    LogicalRegion lr3 = regions[2].get_logical_region();
+    LogicalPartition lp1, lp2, lp3;
+
+    coord_t idx_left_sub_tree = 0LL;
+    coord_t idx_right_sub_tree = 0LL;
+
+    lp1 = runtime->get_logical_partition_by_color(ctxt, lr1, partition_color1);
+    LogicalRegion my_sub_tree_lr1 = runtime->get_logical_subregion_by_color(ctxt, lp1, my_sub_tree_color);
+
+    lp2 = runtime->get_logical_partition_by_color(ctxt, lr1, partition_color2);
+    LogicalRegion my_sub_tree_lr2 = runtime->get_logical_subregion_by_color(ctxt, lp2, my_sub_tree_color);
+
+    LogicalRegion my_sub_tree_lr3;
+
+    Future f1;
+    {
+        ReadTaskArgs args(idx);
+        TaskLauncher read_task_launcher(READ_TASK_ID, TaskArgument(&args, sizeof(ReadTaskArgs)));
+        RegionRequirement req(my_sub_tree_lr, READ_ONLY, EXCLUSIVE, lr1);
+        req.add_field(FID_X);
+        read_task_launcher.add_region_requirement(req);
+        f1 = runtime->execute_task(ctxt, read_task_launcher);
+    }
+
+    Future f2;
+    {
+        ReadTaskArgs args(idx + 1);
+        TaskLauncher read_task_launcher2(READ_TASK_ID, TaskArgument(&args, sizeof(ReadTaskArgs)));
+        RegionRequirement req(my_sub_tree_lr, READ_ONLY, EXCLUSIVE, lr2);
+        req.add_field(FID_X);
+        read_task_launcher2.add_region_requirement(req);
+        f_left = runtime->execute_task(ctxt, read_task_launcher2);
+    }
+
+    int node_value1 = f1.get_result<int>();
+    int node_value2 = f2.get_result<int>();
+
+    if (n < max_depth)
+    {
+        IndexSpace is3 = lr3.get_index_space();
+        DomainPointColoring coloring;
+
+        idx_left_sub_tree = idx + 1;
+        idx_right_sub_tree = idx + static_cast<coord_t>(pow(2, max_depth - n));
+
+        Rect<1> my_sub_tree_rect(idx, idx);
+        Rect<1> left_sub_tree_rect(idx_left_sub_tree, idx_right_sub_tree - 1);
+        Rect<1> right_sub_tree_rect(idx_right_sub_tree,
+        idx_right_sub_tree + static_cast<coord_t>(pow(2, max_depth - n)) - 2);
+
+        coloring[my_sub_tree_color] = my_sub_tree_rect;
+        coloring[left_sub_tree_color] = left_sub_tree_rect;
+        coloring[right_sub_tree_color] = right_sub_tree_rect;
+
+        Rect<1> color_space = Rect<1>(my_sub_tree_color, right_sub_tree_color);
+
+        IndexPartition ip = runtime->create_index_partition(ctx, is3, color_space, coloring, DISJOINT_KIND, partition_color3);
+        lp3 = runtime->get_logical_partition(ctx, lr3, ip);
+        my_sub_tree_lr3 = runtime->get_logical_subregion_by_color(ctx, lp3, my_sub_tree_color);
+    }
+
+    assert(lr3 != LogicalRegion::NO_REGION);
+    assert(my_sub_tree_lr3 != LogicalRegion::NO_REGION);
+
+    int node_value = node_value1 + node_value2;
+    {
+        SetTaskArgs args(node_value, idx, n, max_depth);
+        TaskLauncher gaxpy_set_task_launcher(GAXPY_SET_TASK_ID, TaskArgument(&args, sizeof(SetTaskArgs)));
+        RegionRequirement req(my_sub_tree_lr3, WRITE_DISCARD, EXCLUSIVE, lr3);
+        req.add_field(FID_X);
+        gaxpy_set_task_launcher.add_region_requirement(req);
+        runtime->execute_task(ctx, gaxpy_set_task_launcher);
+    }
+
+    if ((node_value1 != 0 || node_value2 != 0) && n < max_depth) {
+        assert(lp != LogicalPartition::NO_PART);
+        Rect<1> launch_domain(left_sub_tree_color, right_sub_tree_color);
+        ArgumentMap arg_map;
+        Arguments for_left_sub_tree (n + 1, l * 2    , max_depth, idx_left_sub_tree, partition_color, true);
+        Arguments for_right_sub_tree(n + 1, l * 2 + 1, max_depth, idx_right_sub_tree, partition_color, true);
+
+        arg_map.set_point(left_sub_tree_color, TaskArgument(&for_left_sub_tree, sizeof(Arguments)));
+        arg_map.set_point(right_sub_tree_color, TaskArgument(&for_right_sub_tree, sizeof(Arguments)));
+
+        IndexTaskLauncher gaxpy_launcher(GAXPY_TASK_ID, launch_domain, TaskArgument(NULL, 0), arg_map);
+        RegionRequirement req(lp3, 0, WRITE_DISCARD, EXCLUSIVE, lr3);
+        req.add_field(FID_X);
+        gaxpy_launcher.add_region_requirement(req);
+        runtime->execute_index_space(ctx, gaxpy_launcher);
+    }
+
+
 }
 
 void print_task(const Task *task, const std::vector<PhysicalRegion> &regions, Context ctxt, HighLevelRuntime *runtime) {
