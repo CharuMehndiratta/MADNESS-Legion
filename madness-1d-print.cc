@@ -69,6 +69,11 @@ struct SetTaskArgs {
     SetTaskArgs(int _node_value, coord_t _idx, int _n, int _max_depth) : node_value(_node_value), idx(_idx), n(_n), max_depth(_max_depth) {}
 };
 
+struct GaxpySetTaskArgs {
+    coord_t idx;
+    GaxpySetTaskArgs(coord_t _idx) : idx(_idx) {}
+};
+
 struct ReadTaskArgs {
     coord_t idx;
     ReadTaskArgs(coord_t _idx) : idx(_idx) {}
@@ -270,11 +275,13 @@ void gaxpy_set_task(const Task *task,
               const std::vector<PhysicalRegion> &regions,
               Context ctx, HighLevelRuntime *runtime) {
 
-    SetTaskArgs args = *(const SetTaskArgs *) task->args;
-    assert(regions.size() == 1);
+    GaxpySetTaskArgs args = *(const GaxpySetTaskArgs *) task->args;
+    assert(regions.size() == 3);
 
     const FieldAccessor<WRITE_DISCARD, int, 1> write_acc(regions[0], FID_X);
-    write_acc[args.idx] = args.node_value;
+    const FieldAccessor<READ_ONLY, int, 1> write_acc1(regions[1], FID_X);
+    const FieldAccessor<READ_ONLY, int, 1> write_acc2(regions[2], FID_X);
+    write_acc[args.idx] = write_acc1[args.idx] + write_acc2[args.idx];
 }
 
 int read_task(const Task *task,
@@ -503,29 +510,6 @@ void gaxpy_task(const Task *task, const std::vector<PhysicalRegion> &regions, Co
 
     LogicalRegion my_sub_tree_lr3;
 
-    Future f1;
-    {
-        ReadTaskArgs args(idx);
-        TaskLauncher read_task_launcher(READ_TASK_ID, TaskArgument(&args, sizeof(ReadTaskArgs)));
-        RegionRequirement req(my_sub_tree_lr1, READ_ONLY, EXCLUSIVE, lr1);
-        req.add_field(FID_X);
-        read_task_launcher.add_region_requirement(req);
-        f1 = runtime->execute_task(ctx, read_task_launcher);
-    }
-
-    Future f2;
-    {
-        ReadTaskArgs args(idx);
-        TaskLauncher read_task_launcher2(READ_TASK_ID, TaskArgument(&args, sizeof(ReadTaskArgs)));
-        RegionRequirement req(my_sub_tree_lr2, READ_ONLY, EXCLUSIVE, lr2);
-        req.add_field(FID_X);
-        read_task_launcher2.add_region_requirement(req);
-        f2 = runtime->execute_task(ctx, read_task_launcher2);
-    }
-
-    int node_value1 = f1.get_result<int>();
-    int node_value2 = f2.get_result<int>();
-
     if (n < max_depth)
     {
         IndexSpace is3 = lr3.get_index_space();
@@ -553,14 +537,18 @@ void gaxpy_task(const Task *task, const std::vector<PhysicalRegion> &regions, Co
     assert(lr3 != LogicalRegion::NO_REGION);
     assert(my_sub_tree_lr3 != LogicalRegion::NO_REGION);
 
-    int node_value = node_value1 + node_value2;
-
     {
-        SetTaskArgs args(node_value, idx, n, max_depth);
-        TaskLauncher gaxpy_set_task_launcher(GAXPY_SET_TASK_ID, TaskArgument(&args, sizeof(SetTaskArgs)));
-        RegionRequirement req(my_sub_tree_lr3, WRITE_DISCARD, EXCLUSIVE, lr3);
-        req.add_field(FID_X);
-        gaxpy_set_task_launcher.add_region_requirement(req);
+        GaxpySetTaskArgs args(idx);
+        TaskLauncher gaxpy_set_task_launcher(GAXPY_SET_TASK_ID, TaskArgument(&args, sizeof(GaxpySetTaskArgs)));
+        RegionRequirement req1(my_sub_tree_lr3, WRITE_DISCARD, EXCLUSIVE, lr3);
+        RegionRequirement req2(my_sub_tree_lr1, READ_ONLY, EXCLUSIVE, lr1);
+        RegionRequirement req3(my_sub_tree_lr2, READ_ONLY, EXCLUSIVE, lr2);
+        req1.add_field(FID_X);
+        req2.add_field(FID_X);
+        req3.add_field(FID_X);
+        gaxpy_set_task_launcher.add_region_requirement(req1);
+        gaxpy_set_task_launcher.add_region_requirement(req2);
+        gaxpy_set_task_launcher.add_region_requirement(req3);
         runtime->execute_task(ctx, gaxpy_set_task_launcher);
     }
 
