@@ -160,7 +160,7 @@ void top_level_task(const Task *task,
     ReConstructArguments reconstruct_args(0, 0, max_depth, 0, partition_color1, 0);
 
     // Launching another task to print the values of the binary tree nodes
-    TaskLauncher reconstruct_launcher(RECONSTRUCT_TASK_ID, TaskArgument(&args, sizeof(ReConstructArguments)));
+    TaskLauncher reconstruct_launcher(RECONSTRUCT_TASK_ID, TaskArgument(&reconstruct_args, sizeof(ReConstructArguments)));
     reconstruct_launcher.add_region_requirement(RegionRequirement(lr1, READ_WRITE, EXCLUSIVE, lr1));
     reconstruct_launcher.add_field(0, FID_X);
     runtime->execute_task(ctx, reconstruct_launcher);
