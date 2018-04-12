@@ -437,7 +437,7 @@ int get_coef_task(const Task *task, const std::vector<PhysicalRegion> &regions, 
 
     assert(regions.size() == 1);
     LogicalRegion lr = regions[0].get_logical_region();
-    LogicalPartition lp = LogicalPartition::NO_PART, lp1,lp2;
+    LogicalPartition lp = LogicalPartition::NO_PART;
 
     coord_t idx_left_sub_tree = 0LL;
     coord_t idx_right_sub_tree = 0LL;
@@ -459,7 +459,6 @@ int get_coef_task(const Task *task, const std::vector<PhysicalRegion> &regions, 
             read_task_launcher.add_region_requirement(req);
             f1 = runtime->execute_task(ctxt, read_task_launcher);
         }
-
         return f1.get_result<int>();
     }
 
