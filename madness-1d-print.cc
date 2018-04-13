@@ -152,7 +152,7 @@ void top_level_task(const Task *task,
     print_launcher1.add_field(0, FID_X);
     runtime->execute_task(ctx, print_launcher1);
 
-    GetCoefArguments get_coef_args(0, 0, max_depth, 0, partition_color1, 5, 0);
+    GetCoefArguments get_coef_args(0, 0, max_depth, 0, partition_color1, 2, 0);
 
     Future f1;
     {
@@ -421,9 +421,6 @@ int get_coef_task(const Task *task, const std::vector<PhysicalRegion> &regions, 
     int questioned_n = args.questioned_n;
     int questioned_l = args.questioned_l;
 
-    fprintf(stderr, "questioned_n %d actual n %d\n", questioned_n, n);
-    fprintf(stderr, "questioned_l %d actual l %d\n", questioned_l, l);
-
     if(l < 0 || l >= pow(2, n)) {
         return 0;
     }
@@ -481,9 +478,11 @@ int get_coef_task(const Task *task, const std::vector<PhysicalRegion> &regions, 
         get_coefs_launcher.add_region_requirement(req);
         f2 = runtime->execute_index_space(ctxt, get_coefs_launcher);
         f2.wait_all_results();
-        return (f2.get_result<int>(0) || f2.get_result<int>(1));
+        if (f2.get_result<int>(left_sub_tree_color) != -1)
+            return f2.get_result<int>(left_sub_tree_color);
+        else
+            return f2.get_result<int>(right_sub_tree_color);
     } else {
-        fprintf(stderr, "Nothing found\n");
         return -1;
     }
 
