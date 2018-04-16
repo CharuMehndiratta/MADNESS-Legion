@@ -14,7 +14,8 @@ enum TASK_IDs {
     PRINT_TASK_ID,
     READ_TASK_ID,
     COMPRESS_TASK_ID,
-    COMPRESS_SET_TASK_ID
+    COMPRESS_SET_TASK_ID,
+    NORM_TASK_ID
 };
 
 enum FieldIDs {
@@ -135,6 +136,14 @@ void top_level_task(const Task *task,
     print_launcher1.add_region_requirement(RegionRequirement(lr1, READ_ONLY, EXCLUSIVE, lr1));
     print_launcher1.add_field(0, FID_X);
     runtime->execute_task(ctx, print_launcher1);
+
+
+    TaskLauncher norm_launcher(NORM_TASK_ID, TaskArgument(&args, sizeof(Arguments)));
+    norm_launcher.add_region_requirement(RegionRequirement(lr1, READ_ONLY, EXCLUSIVE, lr1));
+    norm_launcher.add_field(0, FID_X);
+    Future f1 = runtime->execute_task(ctx, norm_launcher);
+    float norm_value = sqrt(f1.get_result<int>());
+    fprintf(stderr, "norm result %d\n", f1.get_result<int>());
 
     // Destroying allocated memory
     runtime->destroy_logical_region(ctx, lr1);
@@ -383,8 +392,66 @@ void compress_task(const Task *task, const std::vector<PhysicalRegion> &regions,
     }
 }
 
-void gaxpy_task(const Task *task, const std::vector<PhysicalRegion> &regions, Context ctx, HighLevelRuntime *runtime) {
-    
+int norm_task(const Task *task, const std::vector<PhysicalRegion> &regions, Context ctx, HighLevelRuntime *runtime) {
+    Arguments args = task->is_index_space ? *(const Arguments *) task->local_args
+    : *(const Arguments *) task->args;
+
+    int n = args.n;
+    int l = args.l;
+    int max_depth = args.max_depth;
+
+    DomainPoint my_sub_tree_color(Point<1>(0LL));
+    DomainPoint left_sub_tree_color(Point<1>(1LL));
+    DomainPoint right_sub_tree_color(Point<1>(2LL));
+    Color partition_color = args.partition_color;
+
+    coord_t idx = args.idx;
+
+    assert(regions.size() == 1);
+    LogicalRegion lr = regions[0].get_logical_region();
+    LogicalPartition lp = LogicalPartition::NO_PART, lp1,lp2;
+
+    coord_t idx_left_sub_tree = 0LL;
+    coord_t idx_right_sub_tree = 0LL;
+
+    lp = runtime->get_logical_partition_by_color(ctx, lr, partition_color);
+    LogicalRegion my_sub_tree_lr = runtime->get_logical_subregion_by_color(ctx, lp, my_sub_tree_color);
+    LogicalRegion left_sub_tree_lr = runtime->get_logical_subregion_by_color(ctx, lp, left_sub_tree_color);
+
+    IndexSpace indexspace_left = left_sub_tree_lr.get_index_space();
+    Future f1;
+
+    if (runtime->has_index_partition(ctx, indexspace_left, partition_color)) {
+        idx_left_sub_tree = idx + 1;
+        idx_right_sub_tree = idx + static_cast<coord_t>(pow(2, max_depth - n));
+
+        assert(lp != LogicalPartition::NO_PART);
+        Rect<1> launch_domain(left_sub_tree_color, right_sub_tree_color);
+        ArgumentMap arg_map;
+        Arguments for_left_sub_tree (n + 1, l * 2    , max_depth, idx_left_sub_tree, partition_color);
+        Arguments for_right_sub_tree(n + 1, l * 2 + 1, max_depth, idx_right_sub_tree, partition_color);
+
+        arg_map.set_point(left_sub_tree_color, TaskArgument(&for_left_sub_tree, sizeof(Arguments)));
+        arg_map.set_point(right_sub_tree_color, TaskArgument(&for_right_sub_tree, sizeof(Arguments)));
+
+        IndexTaskLauncher norm_launcher(NORM_TASK_ID, launch_domain, TaskArgument(NULL, 0), arg_map);
+        RegionRequirement req(lp, 0, READ_ONLY, EXCLUSIVE, lr);
+        req.add_field(FID_X);
+        norm_launcher.add_region_requirement(req);
+        FutureMap f_result = runtime->execute_index_space(ctx, norm_launcher);
+        return f_result.get_result<int>(left_sub_tree_color) + f_result.get_result<int>(right_sub_tree_color);
+    } else {
+        {
+            ReadTaskArgs args(idx);
+            TaskLauncher read_task_launcher(READ_TASK_ID, TaskArgument(&args, sizeof(ReadTaskArgs)));
+            RegionRequirement req(my_sub_tree_lr, READ_ONLY, EXCLUSIVE, lr);
+            req.add_field(FID_X);
+            read_task_launcher.add_region_requirement(req);
+            f1 = runtime->execute_task(ctx, read_task_launcher);
+        }
+
+        return (f1.get_result<int>() * f1.get_result<int>());
+    }
 }
 
 void print_task(const Task *task, const std::vector<PhysicalRegion> &regions, Context ctxt, HighLevelRuntime *runtime) {
@@ -512,6 +579,13 @@ int main(int argc, char **argv)
         registrar.add_constraint(ProcessorConstraint(Processor::LOC_PROC));
         registrar.set_leaf(true);
         Runtime::preregister_task_variant<compress_set_task>(registrar, "compress_set");
+    }
+
+    {
+        TaskVariantRegistrar registrar(NORM_TASK_ID, "norm");
+        registrar.add_constraint(ProcessorConstraint(Processor::LOC_PROC));
+        registrar.set_inner(true);
+        Runtime::preregister_task_variant<int, norm_task>(registrar, "norm");
     }
 
     return Runtime::start(argc, argv);
