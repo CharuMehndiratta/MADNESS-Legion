@@ -566,6 +566,8 @@ void diff_task(const Task *task, const std::vector<PhysicalRegion> &regions, Con
     Color partition_color1 = args.partition_color1;
     Color partition_color2 = args.partition_color2;
 
+    fprintf(stderr, "partition_color1 %d, partition_color2 %d\n", partition_color1, partition_color2);
+
     coord_t idx = args.idx;
 
     assert(regions.size() == 2);
@@ -722,10 +724,10 @@ void diff_task(const Task *task, const std::vector<PhysicalRegion> &regions, Con
             sm = f_sm.get_result<int>();
         } else {
             sm = s0;
-            GetCoefArguments get_coef_args_sm(0, 0, max_depth, 0, partition_color1, n, l - 1);
+            GetCoefArguments get_coef_args_sp(0, 0, max_depth, 0, partition_color1, n, l + 1);
             Future f_sp;
             {
-                TaskLauncher get_coefs_launcher(GET_COEF_TASK_ID, TaskArgument(&get_coef_args_sm, sizeof(GetCoefArguments)));
+                TaskLauncher get_coefs_launcher(GET_COEF_TASK_ID, TaskArgument(&get_coef_args_sp, sizeof(GetCoefArguments)));
                 get_coefs_launcher.add_region_requirement(RegionRequirement(lr, READ_ONLY, EXCLUSIVE, lr));
                 get_coefs_launcher.add_field(0, FID_X);
                 f_sp = runtime->execute_task(ctx, get_coefs_launcher);
