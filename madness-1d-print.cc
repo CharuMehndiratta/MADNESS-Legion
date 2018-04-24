@@ -39,10 +39,16 @@ struct Arguments {
 
     Color partition_color;
 
+    int actual_max_depth;
+
     // Constructor
-    Arguments(int _n, int _l, int _max_depth, coord_t _idx, Color _partition_color)
-        : n(_n), l(_l), max_depth(_max_depth), idx(_idx), partition_color(_partition_color)
-    {}
+    Arguments(int _n, int _l, int _max_depth, coord_t _idx, Color _partition_color, int _actual_max_depth=0)
+        : n(_n), l(_l), max_depth(_max_depth), idx(_idx), partition_color(_partition_color), actual_max_depth(_actual_max_depth)
+    {
+        if (_actual_max_depth == 0) {
+            actual_max_depth = _max_depth;
+        }
+    }
 };
 
 struct SetTaskArgs {
@@ -142,7 +148,7 @@ void top_level_task(const Task *task, const std::vector<PhysicalRegion> &regions
 
 
     // For 2nd logical region
-    int right_max_depth = 6;
+    int right_max_depth = 4;
 
     Rect<1> tree_rect2(0LL, static_cast<coord_t>(pow(2, right_max_depth + 1)) - 2);
     IndexSpace is2 = runtime->create_index_space(ctx, tree_rect2);
@@ -151,7 +157,7 @@ void top_level_task(const Task *task, const std::vector<PhysicalRegion> &regions
     // Any random value will work
     Color partition_color2 = 20;
 
-    Arguments args2(0, 0, right_max_depth, 0, partition_color2);
+    Arguments args2(0, 0, right_max_depth, 0, partition_color2, 6);
     srand48_r(seed, &args2.gen);
 
     // Launching the refine task
@@ -198,12 +204,12 @@ void top_level_task(const Task *task, const std::vector<PhysicalRegion> &regions
     // print_launcher3_1.add_field(0, FID_X);
     // runtime->execute_task(ctx, print_launcher3_1);
 
-    // Destroying allocated memory
-    runtime->destroy_logical_region(ctx, lr1);
-    runtime->destroy_logical_region(ctx, lr2);
-    runtime->destroy_field_space(ctx, fs);
-    runtime->destroy_index_space(ctx, is);
-    runtime->destroy_index_space(ctx, is2);
+    // // Destroying allocated memory
+    // runtime->destroy_logical_region(ctx, lr1);
+    // runtime->destroy_logical_region(ctx, lr2);
+    // runtime->destroy_field_space(ctx, fs);
+    // runtime->destroy_index_space(ctx, is);
+    // runtime->destroy_index_space(ctx, is2);
 }
 
 
@@ -286,6 +292,7 @@ void refine_task(const Task *task, const std::vector<PhysicalRegion> &regions, C
     int n = args.n;
     int l = args.l;
     int max_depth = args.max_depth;
+    int actual_max_depth = args.actual_max_depth;
 
     DomainPoint my_sub_tree_color(Point<1>(0LL));
     DomainPoint left_sub_tree_color(Point<1>(1LL));
@@ -303,7 +310,7 @@ void refine_task(const Task *task, const std::vector<PhysicalRegion> &regions, C
     coord_t idx_right_sub_tree = 0LL;
 
 
-    if (n < max_depth)
+    if (n < actual_max_depth)
     {
         IndexSpace is = lr.get_index_space();
         DomainPointColoring coloring;
@@ -349,13 +356,14 @@ void refine_task(const Task *task, const std::vector<PhysicalRegion> &regions, C
         runtime->execute_task(ctx, set_task_launcher);
     }
 
-    if (node_value > 3 && n < max_depth)
+    if (node_value > 3 && n < actual_max_depth)
     {
         assert(lp != LogicalPartition::NO_PART);
         Rect<1> launch_domain(left_sub_tree_color, right_sub_tree_color);
         ArgumentMap arg_map;
-        Arguments for_left_sub_tree (n + 1, l * 2    , max_depth, idx_left_sub_tree, partition_color);
-        Arguments for_right_sub_tree(n + 1, l * 2 + 1, max_depth, idx_right_sub_tree, partition_color);
+
+        Arguments for_left_sub_tree (n + 1, l * 2    , max_depth, idx_left_sub_tree, partition_color, actual_max_depth);
+        Arguments for_right_sub_tree(n + 1, l * 2 + 1, max_depth, idx_right_sub_tree, partition_color, actual_max_depth);
 
         // Make sure two subtrees use different random number generators
         long int new_seed = 0L;
