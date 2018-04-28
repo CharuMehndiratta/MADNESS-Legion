@@ -110,7 +110,7 @@ struct CompressSetTaskArgs {
 //                        i+(2^k-1)-1 + 1 + (j + 1) * (2^(max_level - (l + k) +1) - 1) - 1]
 void top_level_task(const Task *task, const std::vector<PhysicalRegion> &regions, Context ctx, HighLevelRuntime *runtime) {
 
-    int overall_max_depth = 4;
+    int overall_max_depth = 6;
     int actual_left_depth = 4;
     long int seed = 12345;
     {
@@ -166,7 +166,7 @@ void top_level_task(const Task *task, const std::vector<PhysicalRegion> &regions
 
 
     // For 2nd logical region
-    int actual_right_depth = 4;
+    int actual_right_depth = 6;
 
     Rect<1> tree_rect2(0LL, static_cast<coord_t>(pow(2, overall_max_depth + 1)) - 2);
     IndexSpace is2 = runtime->create_index_space(ctx, tree_rect2);
@@ -203,7 +203,6 @@ void top_level_task(const Task *task, const std::vector<PhysicalRegion> &regions
     runtime->execute_task(ctx, print_launcher2_2);
 
     // For 3rd logical region
-    overall_max_depth = 4;
     int actual_new_tree_depth = max(actual_left_depth, actual_right_depth);
 
     Rect<1> tree_rect3(0LL, static_cast<coord_t>(pow(2, overall_max_depth + 1)) - 2);
@@ -226,7 +225,7 @@ void top_level_task(const Task *task, const std::vector<PhysicalRegion> &regions
 
     // LogicalRegion lr4 = runtime->create_logical_region(ctx, is2, fs);
 
-    // Launching gaxpy task
+    // Launching gaxpy task 
     TaskLauncher gaxpy_launcher(GAXPY_TASK_ID, TaskArgument(&args3, sizeof(GaxpyArguments)));
     gaxpy_launcher.add_region_requirement(RegionRequirement(lr1, READ_ONLY, EXCLUSIVE, lr1));
     gaxpy_launcher.add_region_requirement(RegionRequirement(lr2, READ_ONLY, EXCLUSIVE, lr2));
@@ -583,7 +582,7 @@ void gaxpy_task(const Task *task, const std::vector<PhysicalRegion> &regions, Co
     LogicalRegion my_sub_tree_lr2 = LogicalRegion::NO_REGION;
     LogicalRegion left_sub_tree_lr2 = LogicalRegion::NO_REGION;
     LogicalRegion right_sub_tree_lr2 = LogicalRegion::NO_REGION;
-    LogicalRegion my_sub_tree_lr3 = lr3;
+    LogicalRegion my_sub_tree_lr3 = lr3, left_sub_tree_lr3, right_sub_tree_lr3;
 
     IndexSpace indexspace_tree_left1 = IndexSpace::NO_SPACE, indexspace_tree_left2 = IndexSpace::NO_SPACE;
     IndexSpace indexspace_tree_right1 = IndexSpace::NO_SPACE, indexspace_tree_right2 = IndexSpace::NO_SPACE;
@@ -621,6 +620,8 @@ void gaxpy_task(const Task *task, const std::vector<PhysicalRegion> &regions, Co
         IndexPartition ip = runtime->create_index_partition(ctx, is3, color_space, coloring, DISJOINT_KIND, partition_color3);
         lp3 = runtime->get_logical_partition(ctx, lr3, ip);
         my_sub_tree_lr3 = runtime->get_logical_subregion_by_color(ctx, lp3, my_sub_tree_color);
+        left_sub_tree_lr3 = runtime->get_logical_subregion_by_color(ctx, lp3, left_sub_tree_color);
+        right_sub_tree_lr3 = runtime->get_logical_subregion_by_color(ctx, lp3, right_sub_tree_color);
     } else {
         return;
     }
@@ -637,6 +638,7 @@ void gaxpy_task(const Task *task, const std::vector<PhysicalRegion> &regions, Co
         indexspace_tree_right2 = right_sub_tree_lr2.get_index_space();
     }
 
+
     if ((indexspace_tree_left1 != IndexSpace::NO_SPACE && runtime->has_index_partition(ctx, indexspace_tree_left1, partition_color1)) || 
         (indexspace_tree_left2 != IndexSpace::NO_SPACE && runtime->has_index_partition(ctx, indexspace_tree_left2, partition_color2)) ) {
         assert(my_sub_tree_lr3 != LogicalRegion::NO_REGION);
@@ -646,16 +648,16 @@ void gaxpy_task(const Task *task, const std::vector<PhysicalRegion> &regions, Co
         {
             bool is_left = true, is_right = true;
 
+            // when left tree has reached its leaf node
             if (indexspace_tree_left1 == IndexSpace::NO_SPACE || runtime->has_index_partition(ctx, indexspace_tree_left1, partition_color1) == false) {
                 is_left = false;
                 is_right = true;
-                my_sub_tree_lr1 = dummy_lr;
             }
 
+            // when right tree has reached its leaf node
             if (indexspace_tree_left2 == IndexSpace::NO_SPACE || runtime->has_index_partition(ctx, indexspace_tree_left2, partition_color2) == false) {
                 is_left = true;
                 is_right = false;
-                my_sub_tree_lr2 = dummy_lr;
             }
             
             assert(my_sub_tree_lr2 != LogicalRegion::NO_REGION);
@@ -680,12 +682,14 @@ void gaxpy_task(const Task *task, const std::vector<PhysicalRegion> &regions, Co
             runtime->execute_task(ctx, gaxpy_set_task_launcher);
         }
 
+
+
         GaxpyArguments for_left_sub_tree (n + 1, l * 2, max_depth, idx_left_sub_tree, partition_color1, partition_color2, partition_color3, actual_max_depth);
 
         TaskLauncher gaxpy_launcher(GAXPY_TASK_ID, TaskArgument(&for_left_sub_tree, sizeof(GaxpyArguments)));
         RegionRequirement req1(left_sub_tree_lr1, READ_ONLY, EXCLUSIVE, lr1);
         RegionRequirement req2(left_sub_tree_lr2, READ_ONLY, EXCLUSIVE, lr2);
-        RegionRequirement req3(my_sub_tree_lr3, WRITE_DISCARD, EXCLUSIVE, lr3);
+        RegionRequirement req3(left_sub_tree_lr3, WRITE_DISCARD, EXCLUSIVE, lr3);
         req1.add_field(FID_X);
         req2.add_field(FID_X);
         req3.add_field(FID_X);
@@ -706,12 +710,14 @@ void gaxpy_task(const Task *task, const std::vector<PhysicalRegion> &regions, Co
         {
             bool is_left = true, is_right = true;
 
+            // when left tree has reached its leaf node
             if (indexspace_tree_right1 == IndexSpace::NO_SPACE || runtime->has_index_partition(ctx, indexspace_tree_right1, partition_color1) == false) {
                 is_left = false;
                 is_right = true;
                 my_sub_tree_lr1 = dummy_lr;
             }
 
+            // when right tree has reached its leaf node
             if (indexspace_tree_right2 == IndexSpace::NO_SPACE || runtime->has_index_partition(ctx, indexspace_tree_right2, partition_color2) == false) {
                 is_left = true;
                 is_right = false;
@@ -745,7 +751,7 @@ void gaxpy_task(const Task *task, const std::vector<PhysicalRegion> &regions, Co
         TaskLauncher gaxpy_launcher(GAXPY_TASK_ID, TaskArgument(&for_right_sub_tree, sizeof(GaxpyArguments)));
         RegionRequirement req1(right_sub_tree_lr1, READ_ONLY, EXCLUSIVE, lr1);
         RegionRequirement req2(right_sub_tree_lr2, READ_ONLY, EXCLUSIVE, lr2);
-        RegionRequirement req3(my_sub_tree_lr3, WRITE_DISCARD, EXCLUSIVE, lr3);
+        RegionRequirement req3(right_sub_tree_lr3, WRITE_DISCARD, EXCLUSIVE, lr3);
         req1.add_field(FID_X);
         req2.add_field(FID_X);
         req3.add_field(FID_X);
@@ -754,6 +760,44 @@ void gaxpy_task(const Task *task, const std::vector<PhysicalRegion> &regions, Co
         gaxpy_launcher.add_region_requirement(req3);
         runtime->execute_task(ctx, gaxpy_launcher);
     }
+
+    // when both the trees have reached their leaf nodes
+    if (indexspace_tree_left1 != IndexSpace::NO_SPACE && runtime->has_index_partition(ctx, indexspace_tree_left1, partition_color1) == false &&
+        indexspace_tree_left2 != IndexSpace::NO_SPACE && runtime->has_index_partition(ctx, indexspace_tree_left2, partition_color2) == false &&
+        indexspace_tree_right1 != IndexSpace::NO_SPACE && runtime->has_index_partition(ctx, indexspace_tree_right1, partition_color1) == false && 
+        indexspace_tree_right2 != IndexSpace::NO_SPACE && runtime->has_index_partition(ctx, indexspace_tree_right2, partition_color2) == false
+        ) {
+            bool is_left = true, is_right = true;
+
+            fprintf(stderr, "error while here\n");
+
+            if (my_sub_tree_lr1 == dummy_lr)
+                is_left = false;
+            if (my_sub_tree_lr2 == dummy_lr)
+                is_right = false;
+            
+            assert(my_sub_tree_lr2 != LogicalRegion::NO_REGION);
+            assert(my_sub_tree_lr1 != LogicalRegion::NO_REGION);
+            assert(my_sub_tree_lr3 != LogicalRegion::NO_REGION);
+            assert(lr3 != LogicalRegion::NO_REGION);
+            assert(lr2 != LogicalRegion::NO_REGION);
+            assert(lr1 != LogicalRegion::NO_REGION);
+
+            GaxpySetTaskArgs args(idx, is_left, is_right);
+
+            TaskLauncher gaxpy_set_task_launcher(GAXPY_SET_TASK_ID, TaskArgument(&args, sizeof(GaxpySetTaskArgs)));
+
+            RegionRequirement req1(my_sub_tree_lr1, READ_ONLY, EXCLUSIVE, lr1);
+            RegionRequirement req2(my_sub_tree_lr2, READ_ONLY, EXCLUSIVE, lr2);
+            RegionRequirement req3(my_sub_tree_lr3, WRITE_DISCARD, EXCLUSIVE, lr3);
+            req1.add_field(FID_X);
+            req2.add_field(FID_X);
+            req3.add_field(FID_X);
+            gaxpy_set_task_launcher.add_region_requirement(req1);
+            gaxpy_set_task_launcher.add_region_requirement(req2);
+            gaxpy_set_task_launcher.add_region_requirement(req3);
+            runtime->execute_task(ctx, gaxpy_set_task_launcher);
+        }
 }
 
 void print_task(const Task *task, const std::vector<PhysicalRegion> &regions, Context ctxt, HighLevelRuntime *runtime) {
