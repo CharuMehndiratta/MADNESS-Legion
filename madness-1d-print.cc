@@ -16,7 +16,7 @@ enum TASK_IDs {
     COMPRESS_TASK_ID,
     COMPRESS_SET_TASK_ID,
     INNER_PRODUCT_TASK_ID,
-    DUMMY_READ_TASK_ID,
+    PRODUCT_TASK_ID,
 };
 
 enum FieldIDs {
@@ -85,12 +85,6 @@ struct InnerProductArguments {
         partition_color2(_partition_color2), actual_max_depth(_actual_max_depth)
     {}
 };
-
-// struct InnerProductSetTaskArgs {
-//     coord_t idx;
-//     int node_value;
-//     InnerProductSetTaskArgs(coord_t _idx, int _node_value) : idx(_idx), node_value(_node_value) {}
-// };
 
 
 void top_level_task(const Task *task, const std::vector<PhysicalRegion> &regions, Context ctx, HighLevelRuntime *runtime) {
@@ -189,16 +183,6 @@ void top_level_task(const Task *task, const std::vector<PhysicalRegion> &regions
 
     InnerProductArguments args3(0, 0, overall_max_depth, 0, partition_color1, partition_color2, min(actual_left_depth, actual_right_depth));
 
-    // Future f1, f2;
-    // {
-    //     TaskLauncher dummy_read_task_launcher(DUMMY_READ_TASK_ID, TaskArgument(NULL, 0));
-    //     f1 = runtime->execute_task(ctx, dummy_read_task_launcher);
-    //     f2 = runtime->execute_task(ctx, dummy_read_task_launcher);
-    // }
-
-    // Future f1 = runtime->from_value(10);
-    // Future f2 = runtime->from_value(10);
-
     // Launching inner product task
     TaskLauncher inner_product_launcher(INNER_PRODUCT_TASK_ID, TaskArgument(&args3, sizeof(InnerProductArguments)));
     inner_product_launcher.add_region_requirement(RegionRequirement(lr1, READ_ONLY, EXCLUSIVE, lr1));
@@ -213,20 +197,13 @@ void top_level_task(const Task *task, const std::vector<PhysicalRegion> &regions
 
     fprintf(stderr, "inner product result %d\n", f_result.get_result<int>());
 
-    // Arguments args4(0, 0, max_depth, 0, partition_color3);
 
-    // // Launching another task to print the values of the binary tree nodes
-    // TaskLauncher print_launcher3_1(PRINT_TASK_ID, TaskArgument(&args4, sizeof(Arguments)));
-    // print_launcher3_1.add_region_requirement(RegionRequirement(lr3, READ_ONLY, EXCLUSIVE, lr3));
-    // print_launcher3_1.add_field(0, FID_X);
-    // runtime->execute_task(ctx, print_launcher3_1);
-
-    // // Destroying allocated memory
-    // runtime->destroy_logical_region(ctx, lr1);
-    // runtime->destroy_logical_region(ctx, lr2);
-    // runtime->destroy_field_space(ctx, fs);
-    // runtime->destroy_index_space(ctx, is);
-    // runtime->destroy_index_space(ctx, is2);
+    // Destroying allocated memory
+    runtime->destroy_logical_region(ctx, lr1);
+    runtime->destroy_logical_region(ctx, lr2);
+    runtime->destroy_field_space(ctx, fs);
+    runtime->destroy_index_space(ctx, is);
+    runtime->destroy_index_space(ctx, is2);
 }
 
 
@@ -300,12 +277,6 @@ void compress_set_task(const Task *task,
     write_acc[args.idx] = write_acc_left[args.left_idx] + write_acc_right[args.right_idx];
 }
 
-int dummy_read_task(const Task *task,
-              const std::vector<PhysicalRegion> &regions,
-              Context ctx, HighLevelRuntime *runtime) {
-
-    return 0;
-}
 
 // To be recursive task calling for the left and right subtrees, if necessary !
 void refine_task(const Task *task, const std::vector<PhysicalRegion> &regions, Context ctx, HighLevelRuntime *runtime) {
@@ -405,7 +376,6 @@ void refine_task(const Task *task, const std::vector<PhysicalRegion> &regions, C
     }
 }
 
-
 void compress_task(const Task *task, const std::vector<PhysicalRegion> &regions, Context ctxt, HighLevelRuntime *runtime) {
     Arguments args = task->is_index_space ? *(const Arguments *) task->local_args
     : *(const Arguments *) task->args;
@@ -499,10 +469,6 @@ int inner_product_task(const Task *task, const std::vector<PhysicalRegion> &regi
 
     assert(regions.size() == 2);
 
-    // Future f11 = task->futures[0];
-    // Future f12 = task->futures[1];
-    // int product = f11.get_result<int>() * f12.get_result<int>();
-
     LogicalRegion lr1 = regions[0].get_logical_region();
     LogicalRegion lr2 = regions[1].get_logical_region();
 
@@ -510,7 +476,7 @@ int inner_product_task(const Task *task, const std::vector<PhysicalRegion> &regi
     Domain right_tree = runtime->get_index_space_domain(ctx, lr2.get_index_space());
 
     // To compare so that both the trees have same layout structure
-    assert(left_tree.lo() == right_tree.lo());
+    assert(left_tree == right_tree);
     
     LogicalPartition lp1 = LogicalPartition::NO_PART, lp2 = LogicalPartition::NO_PART;
 
@@ -563,6 +529,8 @@ int inner_product_task(const Task *task, const std::vector<PhysicalRegion> &regi
         f_right = runtime->execute_task(ctx, read_task_launcher);
     }
 
+    Future f_result_left = Future::from_value(runtime, 0), f_result_right = Future::from_value(runtime, 0);
+
     int product = f_left.get_result<int>() * f_right.get_result<int>();
 
     int left_value = 0, right_value = 0;
@@ -583,10 +551,7 @@ int inner_product_task(const Task *task, const std::vector<PhysicalRegion> &regi
         inner_product_launcher.add_region_requirement(req1);
         inner_product_launcher.add_region_requirement(req2);
 
-        // inner_product_launcher.add_future(f_left);
-        // inner_product_launcher.add_future(f_right);
-
-        Future f_result_left = runtime->execute_task(ctx, inner_product_launcher);
+        f_result_left = runtime->execute_task(ctx, inner_product_launcher);
         left_value = f_result_left.get_result<int>();
     }
 
@@ -606,14 +571,33 @@ int inner_product_task(const Task *task, const std::vector<PhysicalRegion> &regi
         inner_product_launcher.add_region_requirement(req1);
         inner_product_launcher.add_region_requirement(req2);
 
-        // inner_product_launcher.add_future(f_left);
-        // inner_product_launcher.add_future(f_right);
-
-        Future f_result_right = runtime->execute_task(ctx, inner_product_launcher);
+        f_result_right = runtime->execute_task(ctx, inner_product_launcher);
         right_value = f_result_right.get_result<int>();
     }
 
-    return product + left_value + right_value;
+    TaskLauncher product_task_launcher(PRODUCT_TASK_ID, TaskArgument(NULL, 0));
+    product_task_launcher.add_future(f_left);
+    product_task_launcher.add_future(f_right);
+    product_task_launcher.add_future(f_result_left);
+    product_task_launcher.add_future(f_result_right);
+    Future result = runtime->execute_task(ctx, product_task_launcher);
+
+    // return product + left_value + right_value;
+    return result.get_result<int>();
+}
+
+int product_task(const Task *task, const std::vector<PhysicalRegion> &regions, Context ctx, Runtime *runtime) {
+  assert(task->futures.size() == 4);
+  Future f_left = task->futures[0];
+  int r_left = f_left.get_result<int>();
+  Future f_right = task->futures[1];
+  int r_right = f_right.get_result<int>();
+  Future f_result_left = task->futures[1];
+  int r_result_left = f_result_left.get_result<int>();
+  Future f_result_right = task->futures[1];
+  int r_result_right = f_result_right.get_result<int>();
+
+  return ((r_left * r_right) + r_result_left + r_result_right);
 }
 
 
@@ -751,11 +735,12 @@ int main(int argc, char **argv)
         Runtime::preregister_task_variant<int, inner_product_task>(registrar, "inner_product");
     }
 
+
     {
-        TaskVariantRegistrar registrar(DUMMY_READ_TASK_ID, "dummy_read");
+        TaskVariantRegistrar registrar(PRODUCT_TASK_ID, "product");
         registrar.add_constraint(ProcessorConstraint(Processor::LOC_PROC));
         registrar.set_leaf(true);
-        Runtime::preregister_task_variant<int, dummy_read_task>(registrar, "dummy_read");
+        Runtime::preregister_task_variant<int, product_task>(registrar, "product");
     }
 
     return Runtime::start(argc, argv);
