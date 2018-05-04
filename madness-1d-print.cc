@@ -206,8 +206,6 @@ void top_level_task(const Task *task, const std::vector<PhysicalRegion> &regions
     // For 3rd logical region
     int actual_new_tree_depth = max(actual_left_depth, actual_right_depth);
 
-    fprintf(stderr, "actual_new_tree_depth %d\n", actual_new_tree_depth);
-
     Rect<1> tree_rect3(0LL, static_cast<coord_t>(pow(2, overall_max_depth + 1)) - 2);
     IndexSpace is3 = runtime->create_index_space(ctx, tree_rect3);
     LogicalRegion lr3 = runtime->create_logical_region(ctx, is3, fs);
@@ -582,7 +580,7 @@ void gaxpy_task(const Task *task, const std::vector<PhysicalRegion> &regions, Co
         right_sub_tree_lr1 = runtime->get_logical_subregion_by_color(ctx, lp1, right_sub_tree_color);
         left_subtree = true;
     }
-    if(n == 3){
+    if(n == left_tree_depth - 1){
         lp1 = runtime->get_logical_partition_by_color(ctx, lr1, partition_color1);
         my_sub_tree_lr1 = runtime->get_logical_subregion_by_color(ctx, lp1, my_sub_tree_color);
     }
@@ -595,6 +593,10 @@ void gaxpy_task(const Task *task, const std::vector<PhysicalRegion> &regions, Co
         right_subtree = true;
     }
 
+    if(n == right_tree_depth - 1){
+        lp2 = runtime->get_logical_partition_by_color(ctx, lr2, partition_color2);
+        my_sub_tree_lr2 = runtime->get_logical_subregion_by_color(ctx, lp2, my_sub_tree_color);
+    }
 
     if ((left_subtree || right_subtree) && n < actual_max_depth) {
         IndexSpace is3 = lr3.get_index_space();
