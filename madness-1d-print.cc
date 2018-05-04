@@ -531,10 +531,6 @@ int inner_product_task(const Task *task, const std::vector<PhysicalRegion> &regi
 
     Future f_result_left = Future::from_value(runtime, 0), f_result_right = Future::from_value(runtime, 0);
 
-    int product = f_left.get_result<int>() * f_right.get_result<int>();
-
-    int left_value = 0, right_value = 0;
-
     if ((indexspace_tree_left1 != IndexSpace::NO_SPACE && runtime->has_index_partition(ctx, indexspace_tree_left1, partition_color1)) && 
         (indexspace_tree_left2 != IndexSpace::NO_SPACE && runtime->has_index_partition(ctx, indexspace_tree_left2, partition_color2)) ) {
 
@@ -552,7 +548,6 @@ int inner_product_task(const Task *task, const std::vector<PhysicalRegion> &regi
         inner_product_launcher.add_region_requirement(req2);
 
         f_result_left = runtime->execute_task(ctx, inner_product_launcher);
-        left_value = f_result_left.get_result<int>();
     }
 
     if ((indexspace_tree_right1 != IndexSpace::NO_SPACE && runtime->has_index_partition(ctx, indexspace_tree_right1, partition_color1)) && 
@@ -572,7 +567,6 @@ int inner_product_task(const Task *task, const std::vector<PhysicalRegion> &regi
         inner_product_launcher.add_region_requirement(req2);
 
         f_result_right = runtime->execute_task(ctx, inner_product_launcher);
-        right_value = f_result_right.get_result<int>();
     }
 
     TaskLauncher product_task_launcher(PRODUCT_TASK_ID, TaskArgument(NULL, 0));
@@ -582,7 +576,6 @@ int inner_product_task(const Task *task, const std::vector<PhysicalRegion> &regi
     product_task_launcher.add_future(f_result_right);
     Future result = runtime->execute_task(ctx, product_task_launcher);
 
-    // return product + left_value + right_value;
     return result.get_result<int>();
 }
 
@@ -592,9 +585,9 @@ int product_task(const Task *task, const std::vector<PhysicalRegion> &regions, C
   int r_left = f_left.get_result<int>();
   Future f_right = task->futures[1];
   int r_right = f_right.get_result<int>();
-  Future f_result_left = task->futures[1];
+  Future f_result_left = task->futures[2];
   int r_result_left = f_result_left.get_result<int>();
-  Future f_result_right = task->futures[1];
+  Future f_result_right = task->futures[3];
   int r_result_right = f_result_right.get_result<int>();
 
   return ((r_left * r_right) + r_result_left + r_result_right);
