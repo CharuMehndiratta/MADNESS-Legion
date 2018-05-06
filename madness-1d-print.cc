@@ -114,8 +114,10 @@ struct ReturnGetCoefArguments {
     /* level of the node in the binary tree. Root is at level 0 */
     int n, l;
     LogicalRegion lr;
-    ReturnGetCoefArguments(int _n, int _l, LogicalRegion _lr)
-        : n(_n), l(_l), lr(_lr)
+    coord_t idx;
+    bool exists;
+    ReturnGetCoefArguments(int _n, int _l, LogicalRegion _lr, coord_t _idx, bool _exists)
+        : n(_n), l(_l), lr(_lr), idx(_idx), exists(_exists)
 
     {}
 };
@@ -209,48 +211,35 @@ void top_level_task(const Task *task, const std::vector<PhysicalRegion> &regions
     // print_launcher1.add_field(0, FID_X);
     // runtime->execute_task(ctx, print_launcher1);
 
+    Rect<1> dummy_tree_rect(0LL, static_cast<coord_t>(pow(2, overall_max_depth + 1)) - 2);
+    IndexSpace dummy_is = runtime->create_index_space(ctx, dummy_tree_rect);
+    LogicalRegion dummy_lr = runtime->create_logical_region(ctx, dummy_is, fs);
 
-    GetCoefArguments get_coef_args(0, 0, overall_max_depth, 0, partition_color1, 3, 7);
+    Color partition_color2 = 50;
+    DiffArguments diff_args(0, 0, overall_max_depth, 0, partition_color1, partition_color2, actual_left_depth, 100, false);
 
-    Future f1;
-    {
-        TaskLauncher get_coefs_launcher(GET_COEF_TASK_ID, TaskArgument(&get_coef_args, sizeof(GetCoefArguments)));
-        get_coefs_launcher.add_region_requirement(RegionRequirement(lr1, READ_ONLY, EXCLUSIVE, lr1));
-        get_coefs_launcher.add_field(0, FID_X);
-        f1 = runtime->execute_task(ctx, get_coefs_launcher);
-    }
+    Rect<1> tree_rect2(0LL, static_cast<coord_t>(pow(2, overall_max_depth + 1)) - 2);
+    IndexSpace is2 = runtime->create_index_space(ctx, tree_rect2);
+    LogicalRegion lr2 = runtime->create_logical_region(ctx, is2, fs);
 
-    fprintf(stderr, "get coefs %d\n", f1.get_result<int>());
+    TaskLauncher diff_launcher(DIFF_TASK_ID, TaskArgument(&diff_args, sizeof(DiffArguments)));
+    diff_launcher.add_region_requirement(RegionRequirement(lr1, READ_ONLY, EXCLUSIVE, lr1));
+    diff_launcher.add_region_requirement(RegionRequirement(lr2, WRITE_DISCARD, EXCLUSIVE, lr2));
+    diff_launcher.add_region_requirement(RegionRequirement(lr1, READ_ONLY, EXCLUSIVE, lr1));
+    diff_launcher.add_region_requirement(RegionRequirement(dummy_lr, READ_ONLY, EXCLUSIVE, dummy_lr));
+    diff_launcher.add_field(0, FID_X);
+    diff_launcher.add_field(1, FID_X);
+    diff_launcher.add_field(2, FID_X);
+    diff_launcher.add_field(3, FID_X);
+    runtime->execute_task(ctx, diff_launcher);
 
-    // Rect<1> dummy_tree_rect(0LL, static_cast<coord_t>(pow(2, overall_max_depth + 1)) - 2);
-    // IndexSpace dummy_is = runtime->create_index_space(ctx, dummy_tree_rect);
-    // LogicalRegion dummy_lr = runtime->create_logical_region(ctx, dummy_is, fs);
+    Arguments args2(0, 0, overall_max_depth, 0, partition_color2, actual_left_depth);
 
-    // Color partition_color2 = 50;
-    // DiffArguments diff_args(0, 0, overall_max_depth, 0, partition_color1, partition_color2, actual_left_depth, 100, false);
-
-    // Rect<1> tree_rect2(0LL, static_cast<coord_t>(pow(2, overall_max_depth + 1)) - 2);
-    // IndexSpace is2 = runtime->create_index_space(ctx, tree_rect2);
-    // LogicalRegion lr2 = runtime->create_logical_region(ctx, is2, fs);
-
-    // TaskLauncher diff_launcher(DIFF_TASK_ID, TaskArgument(&diff_args, sizeof(DiffArguments)));
-    // diff_launcher.add_region_requirement(RegionRequirement(lr1, READ_ONLY, EXCLUSIVE, lr1));
-    // diff_launcher.add_region_requirement(RegionRequirement(lr2, WRITE_DISCARD, EXCLUSIVE, lr2));
-    // diff_launcher.add_region_requirement(RegionRequirement(lr1, READ_ONLY, EXCLUSIVE, lr1));
-    // diff_launcher.add_region_requirement(RegionRequirement(dummy_lr, READ_ONLY, EXCLUSIVE, dummy_lr));
-    // diff_launcher.add_field(0, FID_X);
-    // diff_launcher.add_field(1, FID_X);
-    // diff_launcher.add_field(2, FID_X);
-    // diff_launcher.add_field(3, FID_X);
-    // runtime->execute_task(ctx, diff_launcher);
-
-    // Arguments args2(0, 0, overall_max_depth, 0, partition_color2, actual_left_depth);
-
-    // // Launching another task to print the values of the binary tree nodes
-    // TaskLauncher print_launcher12(PRINT_TASK_ID, TaskArgument(&args2, sizeof(Arguments)));
-    // print_launcher12.add_region_requirement(RegionRequirement(lr2, READ_ONLY, EXCLUSIVE, lr2));
-    // print_launcher12.add_field(0, FID_X);
-    // runtime->execute_task(ctx, print_launcher12);
+    // Launching another task to print the values of the binary tree nodes
+    TaskLauncher print_launcher12(PRINT_TASK_ID, TaskArgument(&args2, sizeof(Arguments)));
+    print_launcher12.add_region_requirement(RegionRequirement(lr2, READ_ONLY, EXCLUSIVE, lr2));
+    print_launcher12.add_field(0, FID_X);
+    runtime->execute_task(ctx, print_launcher12);
 
     // Destroying allocated memory
     runtime->destroy_logical_region(ctx, lr1);
@@ -342,7 +331,6 @@ void diff_set_task(const Task *task, const std::vector<PhysicalRegion> &regions,
     const FieldAccessor<READ_WRITE, int, 1> write_acc(regions[0], FID_X);
 
     write_acc[args.idx] = args.node_value;
-    // fprintf(stderr, "step 6\n");
 }
 
 
@@ -536,7 +524,7 @@ struct ReturnGetCoefArguments get_coef_util_task(const Task *task, const std::ve
 
     LogicalRegion left_sub_tree_lr, right_sub_tree_lr;
 
-    ReturnGetCoefArguments get_coef_args(n, l, lr);
+    ReturnGetCoefArguments get_coef_args(n, l, lr, idx, true);
     path.push_back(get_coef_args);
 
     left_sub_tree_lr = runtime->get_logical_subregion_by_color(ctxt, lp, left_sub_tree_color);
@@ -549,7 +537,7 @@ struct ReturnGetCoefArguments get_coef_util_task(const Task *task, const std::ve
     IndexSpace indexspace_right = right_sub_tree_lr.get_index_space();
 
     if(n == questioned_n && l == questioned_l) {
-        ReturnGetCoefArguments get_coef_args(n, l, lr);
+        ReturnGetCoefArguments get_coef_args(n, l, lr, idx, true);
         return get_coef_args;
     }
 
@@ -591,7 +579,7 @@ struct ReturnGetCoefArguments get_coef_util_task(const Task *task, const std::ve
         while(questioned_n >= 0) {
             for (int i = path.size() - 1; i >= 0; i--) {
                 if (path[i].n == (questioned_n - 1) && path[i].l == questioned_l/2) {
-                    ReturnGetCoefArguments get_coef_args(path[i].n, path[i].l, path[i].lr);
+                    ReturnGetCoefArguments get_coef_args(path[i].n, path[i].l, path[i].lr, path[i].idx, false);
                     return get_coef_args;                 
                 }
             }
@@ -600,7 +588,7 @@ struct ReturnGetCoefArguments get_coef_util_task(const Task *task, const std::ve
         }
     }
 
-    ReturnGetCoefArguments get_coef_args1(-1, -1, LogicalRegion::NO_REGION);
+    ReturnGetCoefArguments get_coef_args1(-1, -1, LogicalRegion::NO_REGION, -1,false);
     return get_coef_args1; 
 }
 
@@ -621,7 +609,9 @@ int get_coef_task(const Task *task, const std::vector<PhysicalRegion> &regions, 
     assert(regions.size() == 1);
     LogicalRegion lr = regions[0].get_logical_region();
 
-    if(l < 0 || l >= pow(2, n)) {
+    int val = pow(2, n);
+
+    if(questioned_l < 0 || questioned_l >= val) {
         return 0;
     }
 
@@ -633,7 +623,9 @@ int get_coef_task(const Task *task, const std::vector<PhysicalRegion> &regions, 
 
     ReturnGetCoefArguments return_coef = return_coeficient.get_result<ReturnGetCoefArguments>();
 
-    fprintf(stderr, "n %d l %d\n", return_coef.n, return_coef.l);
+    if (return_coef.n == -1) {
+        return 0;
+    }
 
     LogicalPartition lp = runtime->get_logical_partition_by_color(ctxt, return_coef.lr, partition_color);
 
@@ -644,23 +636,27 @@ int get_coef_task(const Task *task, const std::vector<PhysicalRegion> &regions, 
     IndexSpace indexspace_right = right_sub_tree_lr.get_index_space();
 
     if (runtime->has_index_partition(ctxt, indexspace_left, partition_color) == true &&
-        runtime->has_index_partition(ctxt, indexspace_right, partition_color) == true) {
+        runtime->has_index_partition(ctxt, indexspace_right, partition_color) == true && return_coef.exists == true) {
         return -1;
     }
 
     Future f1;
     if(return_coef.lr != LogicalRegion::NO_REGION) {
-        fprintf(stderr, "do somethign n %d l %d\n", return_coef.n, return_coef.l);
-        // int index = 
-        // {
-        //     ReadTaskArgs args(index);
-        //     TaskLauncher read_task_launcher(READ_TASK_ID, TaskArgument(&args, sizeof(ReadTaskArgs)));
-        //     RegionRequirement req(return_coef.lr, READ_ONLY, EXCLUSIVE, return_coef.lr);
-        //     req.add_field(FID_X);
-        //     read_task_launcher.add_region_requirement(req);
-        //     f1 = runtime->execute_task(ctxt, read_task_launcher);
-        // }
-        // return f1.get_result<int>() + (n - return_coef.n);
+        int index = return_coef.idx;
+        {
+            ReadTaskArgs args(index);
+            TaskLauncher read_task_launcher(READ_TASK_ID, TaskArgument(&args, sizeof(ReadTaskArgs)));
+            RegionRequirement req(return_coef.lr, READ_ONLY, EXCLUSIVE, lr);
+            req.add_field(FID_X);
+            read_task_launcher.add_region_requirement(req);
+            f1 = runtime->execute_task(ctxt, read_task_launcher);
+        }
+        if(return_coef.exists == false) {
+            return f1.get_result<int>() +  (2 * (n - return_coef.n));
+        } else{
+            return f1.get_result<int>();
+        }
+        
     }
 
     fprintf(stderr, "Somthings wrong\n");
@@ -686,10 +682,6 @@ void diff_task(const Task *task, const std::vector<PhysicalRegion> &regions, Con
     DomainPoint right_sub_tree_color(Point<1>(2LL));
     Color partition_color1 = args.partition_color1;
     Color partition_color2 = args.partition_color2;
-
-    fprintf(stderr, "n is %d, l is %d\n", n, l);
-
-    // fprintf(stderr, "partition_color1 %d, partition_color2 %d\n", partition_color1, partition_color2);
 
     coord_t idx = args.idx;
 
@@ -827,46 +819,47 @@ void diff_task(const Task *task, const std::vector<PhysicalRegion> &regions, Con
         }
 
         if (!left_subtree && !right_subtree) {
-            // Future f_s0;
-            // {
-            //     ReadTaskArgs args(idx);
-            //     TaskLauncher read_task_launcher(READ_TASK_ID, TaskArgument(&args, sizeof(ReadTaskArgs)));
-            //     RegionRequirement req(my_sub_tree_lr, READ_ONLY, EXCLUSIVE, lr);
-            //     req.add_field(FID_X);
-            //     read_task_launcher.add_region_requirement(req);
-            //     f_s0 = runtime->execute_task(ctx, read_task_launcher);
-            // }
+            Future f_s0;
+            {
+                ReadTaskArgs args(idx);
+                TaskLauncher read_task_launcher(READ_TASK_ID, TaskArgument(&args, sizeof(ReadTaskArgs)));
+                RegionRequirement req(my_sub_tree_lr, READ_ONLY, EXCLUSIVE, lr);
+                req.add_field(FID_X);
+                read_task_launcher.add_region_requirement(req);
+                f_s0 = runtime->execute_task(ctx, read_task_launcher);
+            }
 
-            s0 = 10;
-            // s0 = f_s0.get_result<int>();
+            s0 = f_s0.get_result<int>();
 
-            // GetCoefArguments get_coef_args_sm(0, 0, max_depth, 0, partition_color1, n, l - 1, true, 0);
-            // Future f_sm;
-            // {
-            //     TaskLauncher get_coefs_launcher(GET_COEF_TASK_ID, TaskArgument(&get_coef_args_sm, sizeof(GetCoefArguments)));
-            //     get_coefs_launcher.add_region_requirement(RegionRequirement(lr_whole, READ_ONLY, EXCLUSIVE, lr_whole));
-            //     get_coefs_launcher.add_field(0, FID_X);
-            //     f_sm = runtime->execute_task(ctx, get_coefs_launcher);
-            // }
-            sm = 10;//f_sm.get_result<int>();
+            GetCoefArguments get_coef_args_sm(n, l, max_depth, 0, partition_color1, n, l - 1);
+            Future f_sm;
+            {
+                TaskLauncher get_coefs_launcher(GET_COEF_TASK_ID, TaskArgument(&get_coef_args_sm, sizeof(GetCoefArguments)));
+                get_coefs_launcher.add_region_requirement(RegionRequirement(lr_whole, READ_ONLY, EXCLUSIVE, lr_whole));
+                get_coefs_launcher.add_field(0, FID_X);
+                f_sm = runtime->execute_task(ctx, get_coefs_launcher);
+            }
+            sm = f_sm.get_result<int>();
 
-            // GetCoefArguments get_coef_args_sp(0, 0, max_depth, 0, partition_color1, n, l + 1, true, 0);
-            // Future f_sp;
-            // {
-            //     TaskLauncher get_coefs_launcher(GET_COEF_TASK_ID, TaskArgument(&get_coef_args_sp, sizeof(GetCoefArguments)));
-            //     get_coefs_launcher.add_region_requirement(RegionRequirement(lr_whole, READ_ONLY, EXCLUSIVE, lr_whole));
-            //     get_coefs_launcher.add_field(0, FID_X);
-            //     f_sp = runtime->execute_task(ctx, get_coefs_launcher);
-            // }
-            sp = -1;//f_sp.get_result<int>();
+            GetCoefArguments get_coef_args_sp(n, l, max_depth, 0, partition_color1, n, l + 1);
+            
+            Future f_sp;
+            {
+                TaskLauncher get_coefs_launcher(GET_COEF_TASK_ID, TaskArgument(&get_coef_args_sp, sizeof(GetCoefArguments)));
+                get_coefs_launcher.add_region_requirement(RegionRequirement(lr_whole, READ_ONLY, EXCLUSIVE, lr_whole));
+                get_coefs_launcher.add_field(0, FID_X);
+                f_sp = runtime->execute_task(ctx, get_coefs_launcher);
+            }
+            sp = f_sp.get_result<int>();
 
             r = 0;
-            bool inside = false;
+            bool if_is_true = false;
 
             if (sm >= 0 && sp >= 0 && s0 >= 0) {
                 r = sm + sp + s0;
-                inside = true;
+                if_is_true = true;
             }
+
             {
                 DiffSetTaskArgs args(idx, r);
                 TaskLauncher diff_set_task_launcher(DIFF_SET_TASK_ID, TaskArgument(&args, sizeof(DiffSetTaskArgs)));
@@ -876,9 +869,9 @@ void diff_task(const Task *task, const std::vector<PhysicalRegion> &regions, Con
                 runtime->execute_task(ctx, diff_set_task_launcher);
             }
 
-            if (inside == false) {
-                DiffArguments for_left_sub_tree (n + 1, l * 2, max_depth, idx_left_sub_tree, partition_color1, partition_color2, actual_max_depth, s0/2, true);
-                DiffArguments for_right_sub_tree(n + 1, l * 2 + 1, max_depth, idx_right_sub_tree, partition_color1, partition_color2, actual_max_depth, s0/2, true);
+            if (if_is_true == false) {
+                DiffArguments for_left_sub_tree (n + 1, l * 2, max_depth, idx_left_sub_tree, partition_color1, partition_color2, actual_max_depth, ceil(s0/float(2)), true);
+                DiffArguments for_right_sub_tree(n + 1, l * 2 + 1, max_depth, idx_right_sub_tree, partition_color1, partition_color2, actual_max_depth, ceil(s0/float(2)), true);
 
                 TaskLauncher diff_launcher_left(DIFF_TASK_ID, TaskArgument(&for_left_sub_tree, sizeof(DiffArguments)));
                 RegionRequirement req_left(dummy_lr, READ_ONLY, EXCLUSIVE, dummy_lr);
@@ -914,36 +907,39 @@ void diff_task(const Task *task, const std::vector<PhysicalRegion> &regions, Con
         }
     } else {
         if (l % 2 == 0) {
+
+            
             sp = s0;
-            // GetCoefArguments get_coef_args_sm(0, 0, max_depth, 0, partition_color1, n, l - 1);
-            // Future f_sm;
-            // {
-            //     TaskLauncher get_coefs_launcher(GET_COEF_TASK_ID, TaskArgument(&get_coef_args_sm, sizeof(GetCoefArguments)));
-            //     get_coefs_launcher.add_region_requirement(RegionRequirement(lr_whole, READ_ONLY, EXCLUSIVE, lr_whole));
-            //     get_coefs_launcher.add_field(0, FID_X);
-            //     f_sm = runtime->execute_task(ctx, get_coefs_launcher);
-            // }
-            sm = -1;//f_sm.get_result<int>();
+            GetCoefArguments get_coef_args_sm(n, l, max_depth, 0, partition_color1, n, l - 1);
+            Future f_sm;
+            {
+                TaskLauncher get_coefs_launcher(GET_COEF_TASK_ID, TaskArgument(&get_coef_args_sm, sizeof(GetCoefArguments)));
+                get_coefs_launcher.add_region_requirement(RegionRequirement(lr_whole, READ_ONLY, EXCLUSIVE, lr_whole));
+                get_coefs_launcher.add_field(0, FID_X);
+                f_sm = runtime->execute_task(ctx, get_coefs_launcher);
+            }
+            sm = f_sm.get_result<int>();
         } else {
             sm = s0;
-            // GetCoefArguments get_coef_args_sp(0, 0, max_depth, 0, partition_color1, n, l + 1, true, 0);
-            // Future f_sp;
-            // {
-            //     TaskLauncher get_coefs_launcher(GET_COEF_TASK_ID, TaskArgument(&get_coef_args_sp, sizeof(GetCoefArguments)));
-            //     get_coefs_launcher.add_region_requirement(RegionRequirement(lr_whole, READ_ONLY, EXCLUSIVE, lr_whole));
-            //     get_coefs_launcher.add_field(0, FID_X);
-            //     f_sp = runtime->execute_task(ctx, get_coefs_launcher);
-            // }
-            sp = -1;//f_sp.get_result<int>();
+            GetCoefArguments get_coef_args_sp(n, l, max_depth, 0, partition_color1, n, l + 1);
+            Future f_sp;
+            {
+                TaskLauncher get_coefs_launcher(GET_COEF_TASK_ID, TaskArgument(&get_coef_args_sp, sizeof(GetCoefArguments)));
+                get_coefs_launcher.add_region_requirement(RegionRequirement(lr_whole, READ_ONLY, EXCLUSIVE, lr_whole));
+                get_coefs_launcher.add_field(0, FID_X);
+                f_sp = runtime->execute_task(ctx, get_coefs_launcher);
+            }
+            sp = f_sp.get_result<int>();
         }
 
         r = 0;
 
-        bool inside = false;
+        bool if_is_true = false;
         if (sm >= 0 && sp >= 0 && s0 >= 0) {
             r = sm + sp + s0;
-            inside = true;
+            if_is_true = true;
         }
+
         {
             DiffSetTaskArgs args(idx, r);
             TaskLauncher diff_set_task_launcher(DIFF_SET_TASK_ID, TaskArgument(&args, sizeof(DiffSetTaskArgs)));
@@ -954,9 +950,9 @@ void diff_task(const Task *task, const std::vector<PhysicalRegion> &regions, Con
         }
 
 
-        if (inside == false) {
-            DiffArguments for_left_sub_tree (n + 1, l * 2    , max_depth, idx_left_sub_tree, partition_color1, partition_color2, actual_max_depth, s0/2, true);
-            DiffArguments for_right_sub_tree(n + 1, l * 2 + 1, max_depth, idx_right_sub_tree, partition_color1, partition_color2, actual_max_depth, s0/2, true);
+        if (if_is_true == false) {
+            DiffArguments for_left_sub_tree (n + 1, l * 2    , max_depth, idx_left_sub_tree, partition_color1, partition_color2, actual_max_depth, ceil(s0/float(2)), true);
+            DiffArguments for_right_sub_tree(n + 1, l * 2 + 1, max_depth, idx_right_sub_tree, partition_color1, partition_color2, actual_max_depth, ceil(s0/float(2)), true);
 
             TaskLauncher diff_launcher_left(DIFF_TASK_ID, TaskArgument(&for_left_sub_tree, sizeof(DiffArguments)));
             RegionRequirement req_left(left_sub_tree_lr, READ_ONLY, EXCLUSIVE, lr);
