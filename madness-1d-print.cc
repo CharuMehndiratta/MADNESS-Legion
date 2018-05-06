@@ -16,7 +16,9 @@ enum TASK_IDs {
     COMPRESS_TASK_ID,
     COMPRESS_SET_TASK_ID,
     GAXPY_TASK_ID,
-    GAXPY_SET_TASK_ID
+    GAXPY_SET_TASK_ID,
+    RECONSTRUCT_SET_TASK_ID,
+    RECONSTRUCT_TASK_ID,
 };
 
 enum FieldIDs {
@@ -109,6 +111,25 @@ struct CompressSetTaskArgs {
 //    [i .. i+(2^k-1)-1]
 //    0 <= j <= 2^k-1 => [i+(2^k-1)-1 + 1 +  j      * (2^(max_level - (l + k) +1) - 1) ..
 //                        i+(2^k-1)-1 + 1 + (j + 1) * (2^(max_level - (l + k) +1) - 1) - 1]
+struct ReConstructArguments {
+    int n, l, max_depth;
+    coord_t idx;
+    drand48_data gen;
+    Color partition_color;
+    int parent_value;
+    ReConstructArguments(int _n, int _l, int _max_depth, coord_t _idx, Color _partition_color, int _parent_value)
+        : n(_n), l(_l), max_depth(_max_depth), idx(_idx), partition_color(_partition_color),
+        parent_value(_parent_value)
+    {}
+};
+
+struct ReConstructSetTaskArgs {
+    coord_t idx;
+    int node_value;
+    ReConstructSetTaskArgs(coord_t _idx, int _node_value) : 
+        idx(_idx), node_value(_node_value){}
+};
+
 void top_level_task(const Task *task, const std::vector<PhysicalRegion> &regions, Context ctx, HighLevelRuntime *runtime) {
 
     int overall_max_depth = 6;
@@ -164,7 +185,6 @@ void top_level_task(const Task *task, const std::vector<PhysicalRegion> &regions
     print_launcher1.add_region_requirement(RegionRequirement(lr1, READ_ONLY, EXCLUSIVE, lr1));
     print_launcher1.add_field(0, FID_X);
     runtime->execute_task(ctx, print_launcher1);
-
 
     // For 2nd logical region
     int actual_right_depth = 4;
@@ -238,51 +258,32 @@ void top_level_task(const Task *task, const std::vector<PhysicalRegion> &regions
     print_launcher3_1.add_field(0, FID_X);
     runtime->execute_task(ctx, print_launcher3_1);
 
+    ReConstructArguments reconstruct_args(0, 0, overall_max_depth, 0, partition_color1, 0);
+
+    // Launching another task to print the values of the binary tree nodes
+    TaskLauncher reconstruct_launcher(RECONSTRUCT_TASK_ID, TaskArgument(&reconstruct_args, sizeof(ReConstructArguments)));
+    reconstruct_launcher.add_region_requirement(RegionRequirement(lr1, READ_WRITE, EXCLUSIVE, lr1));
+    reconstruct_launcher.add_field(0, FID_X);
+
+    Future f1 = Future::from_value(runtime, 0);
+    reconstruct_launcher.add_future(f1);
+    runtime->execute_task(ctx, reconstruct_launcher);
+
+    // Launching another task to print the values of the binary tree nodes
+    TaskLauncher print_launcher2(PRINT_TASK_ID, TaskArgument(&args1, sizeof(Arguments)));
+    print_launcher2.add_region_requirement(RegionRequirement(lr1, READ_ONLY, EXCLUSIVE, lr1));
+    print_launcher2.add_field(0, FID_X);
+    runtime->execute_task(ctx, print_launcher2);
+
     // Destroying allocated memory
     runtime->destroy_logical_region(ctx, lr1);
     runtime->destroy_logical_region(ctx, lr2);
-    // runtime->destroy_logical_region(ctx, lr4);
     runtime->destroy_logical_region(ctx, lr3);
     runtime->destroy_field_space(ctx, fs);
     runtime->destroy_index_space(ctx, is);
     runtime->destroy_index_space(ctx, is2);
     runtime->destroy_index_space(ctx, is3);
 }
-
-
-/*
- *
- *  This algorithm generates a binary tree (and only leaves contain the valuable data). Initial call would be Refine(0,0):
- *   
- *  1) Refine(int n, int l) {
- *  2)        int node_value = pick a random value in a range [1, 10], inclusive;
- *
- *  3)        if (node_value <= 3 || n >= MAX_DEPTH) {
- *  4)                   store in the hash_map (n, l) --> node_value;
- *  5)        }
- *  6)        else {
- *  7)                   store in the hash_map (n, l) --> ZERO; // ZERO value indicates that the node is an internal node
- *  8)                   make a new task of Refine with arguments(n+1, 2 * l); // left child
- *  9)                   make a new task of Refine with arguments(n+1, 2 * l + 1); // right child
- *  10)      }
- *  11) }
- *
- *  
- *
- *  So, as you can clearly see, the result of this task is a binary tree, whose internal nodes contain the value ZERO and only it's leaves contain values in range [1, 3]. As an example, the following could be the result of running the ALG-1:
- *
- *                        _____________0_____________                                 DEPTH/LEVEL = 0
- *                  _____0____                 ______0_______                         DEPTH/LEVEL = 1
- *             ____0___       1            ___0___         __0____                    DEPTH/LEVEL = 2
- *            2        1                  3     __0__     1     __0__                 DEPTH/LEVEL = 3
- *                                           __0__   3         1     2                DEPTH/LEVEL = 4
- *                                          2     2                                   DEPTH/LEVEL = 5
- *
- *
- *  This tree is called to be in "scaling or refined form".
- *
- * */
-
 
 void set_task(const Task *task,
               const std::vector<PhysicalRegion> &regions,
@@ -341,6 +342,17 @@ void compress_set_task(const Task *task,
     const FieldAccessor<READ_WRITE, int, 1> write_acc_right(regions[2], FID_X);
 
     write_acc[args.idx] = write_acc_left[args.left_idx] + write_acc_right[args.right_idx];
+}
+
+void reconstruct_set_task(const Task *task,
+                       const std::vector<PhysicalRegion> &regions,
+                       Context ctx, HighLevelRuntime *runtime) {
+
+    ReConstructSetTaskArgs args = *(const ReConstructSetTaskArgs *) task->args;
+    assert(regions.size() == 1);
+    const FieldAccessor<READ_WRITE, int, 1> write_acc(regions[0], FID_X);
+
+    write_acc[args.idx] = args.node_value;
 }
 
 
@@ -439,6 +451,91 @@ void refine_task(const Task *task, const std::vector<PhysicalRegion> &regions, C
         req.add_field(FID_X);
         refine_launcher.add_region_requirement(req);
         runtime->execute_index_space(ctx, refine_launcher);
+    }
+}
+
+void reconstruct_task(const Task *task, const std::vector<PhysicalRegion> &regions, Context ctxt, HighLevelRuntime *runtime) {
+    ReConstructArguments args = task->is_index_space ? *(const ReConstructArguments *) task->local_args
+    : *(const ReConstructArguments *) task->args;
+
+    int n = args.n;
+    int l = args.l;
+    int max_depth = args.max_depth;
+    int parent_value = args.parent_value;
+
+    Future f11 = task->futures[0];
+    int my_node_value = f11.get_result<int>();
+
+    parent_value = (my_node_value+parent_value)/2;
+
+    DomainPoint my_sub_tree_color(Point<1>(0LL));
+    DomainPoint left_sub_tree_color(Point<1>(1LL));
+    DomainPoint right_sub_tree_color(Point<1>(2LL));
+    Color partition_color = args.partition_color;
+
+    coord_t idx = args.idx;
+
+    assert(regions.size() == 1);
+    LogicalRegion lr = regions[0].get_logical_region();
+    LogicalPartition lp = LogicalPartition::NO_PART, lp1,lp2;
+
+    coord_t idx_left_sub_tree = 0LL;
+    coord_t idx_right_sub_tree = 0LL;
+
+    lp = runtime->get_logical_partition_by_color(ctxt, lr, partition_color);
+    LogicalRegion my_sub_tree_lr = runtime->get_logical_subregion_by_color(ctxt, lp, my_sub_tree_color);
+    LogicalRegion left_sub_tree_lr = runtime->get_logical_subregion_by_color(ctxt, lp, left_sub_tree_color);
+
+    IndexSpace indexspace_left = left_sub_tree_lr.get_index_space();
+
+    if (runtime->has_index_partition(ctxt, indexspace_left, partition_color)) {
+        idx_left_sub_tree = idx + 1;
+        idx_right_sub_tree = idx + static_cast<coord_t>(pow(2, max_depth - n));
+
+        Future f1;
+        {
+            ReadTaskArgs args(idx);
+            TaskLauncher read_task_launcher(READ_TASK_ID, TaskArgument(&args, sizeof(ReadTaskArgs)));
+            RegionRequirement req(my_sub_tree_lr, READ_ONLY, EXCLUSIVE, lr);
+            req.add_field(FID_X);
+            read_task_launcher.add_region_requirement(req);
+            f1 = runtime->execute_task(ctxt, read_task_launcher);
+        }
+
+        {
+            ReConstructSetTaskArgs args(idx, 0);
+            TaskLauncher reconstruct_set_task_launcher(RECONSTRUCT_SET_TASK_ID, TaskArgument(&args, sizeof(ReConstructSetTaskArgs)));
+            RegionRequirement req(my_sub_tree_lr, READ_WRITE, EXCLUSIVE, lr);
+            req.add_field(FID_X);
+            reconstruct_set_task_launcher.add_region_requirement(req);
+            runtime->execute_task(ctxt, reconstruct_set_task_launcher);
+        }
+
+        Rect<1> launch_domain(left_sub_tree_color, right_sub_tree_color);
+        ArgumentMap arg_map;
+
+        ReConstructArguments for_left_sub_tree(n + 1, 2 * l, max_depth, idx_left_sub_tree, partition_color, parent_value);
+        ReConstructArguments for_right_sub_tree(n + 1, 2 * l + 1, max_depth, idx_right_sub_tree, partition_color, parent_value);
+
+        arg_map.set_point(left_sub_tree_color, TaskArgument(&for_left_sub_tree, sizeof(ReConstructArguments)));
+        arg_map.set_point(right_sub_tree_color, TaskArgument(&for_right_sub_tree, sizeof(ReConstructArguments)));
+
+        IndexTaskLauncher reconstruct_launcher(RECONSTRUCT_TASK_ID, launch_domain, TaskArgument(NULL, 0), arg_map);
+        RegionRequirement req(lp, 0, READ_WRITE, EXCLUSIVE, lr);
+        req.add_field(FID_X);
+        reconstruct_launcher.add_region_requirement(req);
+        reconstruct_launcher.add_future(f1);
+        runtime->execute_index_space(ctxt, reconstruct_launcher);
+
+    } else {
+        {
+            ReConstructSetTaskArgs args(idx, parent_value);
+            TaskLauncher reconstruct_set_task_launcher(RECONSTRUCT_SET_TASK_ID, TaskArgument(&args, sizeof(ReConstructSetTaskArgs)));
+            RegionRequirement req(my_sub_tree_lr, READ_WRITE, EXCLUSIVE, lr);
+            req.add_field(FID_X);
+            reconstruct_set_task_launcher.add_region_requirement(req);
+            runtime->execute_task(ctxt, reconstruct_set_task_launcher);
+        }
     }
 }
 
@@ -800,8 +897,7 @@ void gaxpy_task(const Task *task, const std::vector<PhysicalRegion> &regions, Co
         req3.add_field(FID_X);
         gaxpy_set_task_launcher.add_region_requirement(req3);
         runtime->execute_task(ctx, gaxpy_set_task_launcher);
-    }
-        
+    }     
 }
 
 void print_task(const Task *task, const std::vector<PhysicalRegion> &regions, Context ctxt, HighLevelRuntime *runtime) {
@@ -875,8 +971,7 @@ void print_task(const Task *task, const std::vector<PhysicalRegion> &regions, Co
         print_launcher.add_region_requirement(req);
 
         runtime->execute_index_space(ctxt, print_launcher);
-    }
-   
+    } 
 }
 
 
@@ -943,6 +1038,19 @@ int main(int argc, char **argv)
         registrar.add_constraint(ProcessorConstraint(Processor::LOC_PROC));
         registrar.set_inner(true);
         Runtime::preregister_task_variant<gaxpy_task>(registrar, "gaxpy");
+    }
+    {
+        TaskVariantRegistrar registrar(RECONSTRUCT_TASK_ID, "reconstruct");
+        registrar.add_constraint(ProcessorConstraint(Processor::LOC_PROC));
+        registrar.set_inner(true);
+        Runtime::preregister_task_variant<reconstruct_task>(registrar, "reconstruct");
+    }
+
+    {
+        TaskVariantRegistrar registrar(RECONSTRUCT_SET_TASK_ID, "reconstruct_set");
+        registrar.add_constraint(ProcessorConstraint(Processor::LOC_PROC));
+        registrar.set_leaf(true);
+        Runtime::preregister_task_variant<reconstruct_set_task>(registrar, "reconstruct_set");
     }
 
     return Runtime::start(argc, argv);
