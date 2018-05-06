@@ -104,7 +104,6 @@ struct CompressSetTaskArgs {
 };
 
 struct DiffArguments {
-    /* level of the node in the binary tree. Root is at level 0 */
     int n, l, max_depth;
     coord_t idx;
     Color partition_color1;
@@ -127,7 +126,6 @@ struct DiffSetTaskArgs {
 };
 
 struct GetCoefArguments {
-    /* level of the node in the binary tree. Root is at level 0 */
     int n, l, max_depth;
     coord_t idx;
     Color partition_color;
@@ -140,7 +138,6 @@ struct GetCoefArguments {
 };
 
 struct ReturnGetCoefArguments {
-    /* level of the node in the binary tree. Root is at level 0 */
     int n, l;
     LogicalRegion lr;
     coord_t idx;
@@ -152,7 +149,6 @@ struct ReturnGetCoefArguments {
 };
 
 struct GetCoefUtilArguments {
-    /* level of the node in the binary tree. Root is at level 0 */
     int n, l, max_depth;
     coord_t idx;
     Color partition_color;
