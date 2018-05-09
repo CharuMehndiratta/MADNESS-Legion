@@ -226,7 +226,7 @@ void reconstruct_set_task(const Task *task,
 void top_level_task(const Task *task, const std::vector<PhysicalRegion> &regions, Context ctx, HighLevelRuntime *runtime) {
 
     int overall_max_depth = 6;
-    int actual_left_depth = 6;
+    int actual_left_depth = 4;
 
     long int seed = 12345;
     {
@@ -280,121 +280,121 @@ void top_level_task(const Task *task, const std::vector<PhysicalRegion> &regions
     print_launcher1.add_field(0, FID_X);
     runtime->execute_task(ctx, print_launcher1);
 
-    TaskLauncher norm_launcher(NORM_TASK_ID, TaskArgument(&args1, sizeof(Arguments)));
-    norm_launcher.add_region_requirement(RegionRequirement(lr1, READ_ONLY, EXCLUSIVE, lr1));
-    norm_launcher.add_field(0, FID_X);
-    Future f1 = runtime->execute_task(ctx, norm_launcher);
-    float norm_value = sqrt(f1.get_result<int>());
-    fprintf(stderr, "norm result %fm\n", norm_value);
+    // TaskLauncher norm_launcher(NORM_TASK_ID, TaskArgument(&args1, sizeof(Arguments)));
+    // norm_launcher.add_region_requirement(RegionRequirement(lr1, READ_ONLY, EXCLUSIVE, lr1));
+    // norm_launcher.add_field(0, FID_X);
+    // Future f1 = runtime->execute_task(ctx, norm_launcher);
+    // float norm_value = sqrt(f1.get_result<int>());
+    // fprintf(stderr, "norm result %fm\n", norm_value);
 
     // For 2nd logical region
-    int actual_right_depth = 4;
-    Rect<1> tree_rect2(0LL, static_cast<coord_t>(pow(2, overall_max_depth + 1)) - 2);
-    IndexSpace is2 = runtime->create_index_space(ctx, tree_rect2);
+    // int actual_right_depth = 6;
+    // Rect<1> tree_rect2(0LL, static_cast<coord_t>(pow(2, overall_max_depth + 1)) - 2);
+    // IndexSpace is2 = runtime->create_index_space(ctx, tree_rect2);
 
-    LogicalRegion lr2 = runtime->create_logical_region(ctx, is2, fs);
-    // Any random value will work
-    Color partition_color2 = 20;
+    // LogicalRegion lr2 = runtime->create_logical_region(ctx, is2, fs);
+    // // Any random value will work
+    // Color partition_color2 = 20;
 
-    Arguments args2(0, 0, overall_max_depth, 0, partition_color2, actual_right_depth);
-    srand48_r(seed, &args2.gen);
+    // Arguments args2(0, 0, overall_max_depth, 0, partition_color2, actual_right_depth);
+    // srand48_r(seed, &args2.gen);
 
-    // Launching the refine task
-    TaskLauncher refine_launcher2(REFINE_TASK_ID, TaskArgument(&args2, sizeof(Arguments)));
-    refine_launcher2.add_region_requirement(RegionRequirement(lr2, WRITE_DISCARD, EXCLUSIVE, lr2));
-    refine_launcher2.add_field(0, FID_X);
-    runtime->execute_task(ctx, refine_launcher2);
+    // // Launching the refine task
+    // TaskLauncher refine_launcher2(REFINE_TASK_ID, TaskArgument(&args2, sizeof(Arguments)));
+    // refine_launcher2.add_region_requirement(RegionRequirement(lr2, WRITE_DISCARD, EXCLUSIVE, lr2));
+    // refine_launcher2.add_field(0, FID_X);
+    // runtime->execute_task(ctx, refine_launcher2);
+
+    // // // Launching another task to print the values of the binary tree nodes
+    // // TaskLauncher print_launcher2_1(PRINT_TASK_ID, TaskArgument(&args2, sizeof(Arguments)));
+    // // print_launcher2_1.add_region_requirement(RegionRequirement(lr2, READ_ONLY, EXCLUSIVE, lr2));
+    // // print_launcher2_1.add_field(0, FID_X);
+    // // runtime->execute_task(ctx, print_launcher2_1);
 
     // // Launching another task to print the values of the binary tree nodes
-    // TaskLauncher print_launcher2_1(PRINT_TASK_ID, TaskArgument(&args2, sizeof(Arguments)));
-    // print_launcher2_1.add_region_requirement(RegionRequirement(lr2, READ_ONLY, EXCLUSIVE, lr2));
-    // print_launcher2_1.add_field(0, FID_X);
-    // runtime->execute_task(ctx, print_launcher2_1);
+    // TaskLauncher compress_launcher2(COMPRESS_TASK_ID, TaskArgument(&args2, sizeof(Arguments)));
+    // compress_launcher2.add_region_requirement(RegionRequirement(lr2, READ_WRITE, EXCLUSIVE, lr2));
+    // compress_launcher2.add_field(0, FID_X);
+    // runtime->execute_task(ctx, compress_launcher2);
 
-    Rect<1> dummy_tree_rect(0LL, static_cast<coord_t>(pow(2, overall_max_depth + 1)) - 2);
-    IndexSpace dummy_is = runtime->create_index_space(ctx, dummy_tree_rect);
-    LogicalRegion dummy_lr = runtime->create_logical_region(ctx, dummy_is, fs);
+    // // Launching another task to print the values of the binary tree nodes
+    // TaskLauncher print_launcher2_2(PRINT_TASK_ID, TaskArgument(&args2, sizeof(Arguments)));
+    // print_launcher2_2.add_region_requirement(RegionRequirement(lr2, READ_ONLY, EXCLUSIVE, lr2));
+    // print_launcher2_2.add_field(0, FID_X);
+    // runtime->execute_task(ctx, print_launcher2_2);
 
-    DiffArguments diff_args(0, 0, overall_max_depth, 0, partition_color1, partition_color2, actual_left_depth, 100, false);
+    // Rect<1> dummy_tree_rect(0LL, static_cast<coord_t>(pow(2, overall_max_depth + 1)) - 2);
+    // IndexSpace dummy_is = runtime->create_index_space(ctx, dummy_tree_rect);
+    // LogicalRegion dummy_lr = runtime->create_logical_region(ctx, dummy_is, fs);
 
-    Rect<1> tree_rect2_diff(0LL, static_cast<coord_t>(pow(2, overall_max_depth + 1)) - 2);
-    IndexSpace is2_diff = runtime->create_index_space(ctx, tree_rect2_diff);
-    LogicalRegion lr2_diff = runtime->create_logical_region(ctx, is2_diff, fs);
+    // DiffArguments diff_args(0, 0, overall_max_depth, 0, partition_color1, partition_color2, actual_left_depth, 100, false);
 
-    TaskLauncher diff_launcher(DIFF_TASK_ID, TaskArgument(&diff_args, sizeof(DiffArguments)));
-    diff_launcher.add_region_requirement(RegionRequirement(lr1, READ_ONLY, EXCLUSIVE, lr1));
-    diff_launcher.add_region_requirement(RegionRequirement(lr2_diff, WRITE_DISCARD, EXCLUSIVE, lr2_diff));
-    diff_launcher.add_region_requirement(RegionRequirement(lr1, READ_ONLY, EXCLUSIVE, lr1));
-    diff_launcher.add_region_requirement(RegionRequirement(dummy_lr, READ_ONLY, EXCLUSIVE, dummy_lr));
-    diff_launcher.add_field(0, FID_X);
-    diff_launcher.add_field(1, FID_X);
-    diff_launcher.add_field(2, FID_X);
-    diff_launcher.add_field(3, FID_X);
-    runtime->execute_task(ctx, diff_launcher);
+    // Rect<1> tree_rect2_diff(0LL, static_cast<coord_t>(pow(2, overall_max_depth + 1)) - 2);
+    // IndexSpace is2_diff = runtime->create_index_space(ctx, tree_rect2_diff);
+    // LogicalRegion lr2_diff = runtime->create_logical_region(ctx, is2_diff, fs);
+
+    // TaskLauncher diff_launcher(DIFF_TASK_ID, TaskArgument(&diff_args, sizeof(DiffArguments)));
+    // diff_launcher.add_region_requirement(RegionRequirement(lr1, READ_ONLY, EXCLUSIVE, lr1));
+    // diff_launcher.add_region_requirement(RegionRequirement(lr2_diff, WRITE_DISCARD, EXCLUSIVE, lr2_diff));
+    // diff_launcher.add_region_requirement(RegionRequirement(lr1, READ_ONLY, EXCLUSIVE, lr1));
+    // diff_launcher.add_region_requirement(RegionRequirement(dummy_lr, READ_ONLY, EXCLUSIVE, dummy_lr));
+    // diff_launcher.add_field(0, FID_X);
+    // diff_launcher.add_field(1, FID_X);
+    // diff_launcher.add_field(2, FID_X);
+    // diff_launcher.add_field(3, FID_X);
+    // runtime->execute_task(ctx, diff_launcher);
 
 
-    // Launching another task to print the values of the binary tree nodes
-    TaskLauncher compress_launcher2(COMPRESS_TASK_ID, TaskArgument(&args2, sizeof(Arguments)));
-    compress_launcher2.add_region_requirement(RegionRequirement(lr2, READ_WRITE, EXCLUSIVE, lr2));
-    compress_launcher2.add_field(0, FID_X);
-    runtime->execute_task(ctx, compress_launcher2);
+    // InnerProductArguments args3_inner_product(0, 0, overall_max_depth, 0, partition_color1, partition_color2, min(actual_left_depth, actual_right_depth));
 
-    // Launching another task to print the values of the binary tree nodes
-    TaskLauncher print_launcher2_2(PRINT_TASK_ID, TaskArgument(&args2, sizeof(Arguments)));
-    print_launcher2_2.add_region_requirement(RegionRequirement(lr2, READ_ONLY, EXCLUSIVE, lr2));
-    print_launcher2_2.add_field(0, FID_X);
-    runtime->execute_task(ctx, print_launcher2_2);
+    // // Launching inner product task
+    // TaskLauncher inner_product_launcher(INNER_PRODUCT_TASK_ID, TaskArgument(&args3_inner_product, sizeof(InnerProductArguments)));
+    // inner_product_launcher.add_region_requirement(RegionRequirement(lr1, READ_ONLY, EXCLUSIVE, lr1));
+    // inner_product_launcher.add_region_requirement(RegionRequirement(lr2, READ_ONLY, EXCLUSIVE, lr2));
+    // inner_product_launcher.add_field(0, FID_X);
+    // inner_product_launcher.add_field(1, FID_X);
 
-    InnerProductArguments args3_inner_product(0, 0, overall_max_depth, 0, partition_color1, partition_color2, min(actual_left_depth, actual_right_depth));
+    // // inner_product_launcher.add_future(f1);
+    // // inner_product_launcher.add_future(f2);
 
-    // Launching inner product task
-    TaskLauncher inner_product_launcher(INNER_PRODUCT_TASK_ID, TaskArgument(&args3_inner_product, sizeof(InnerProductArguments)));
-    inner_product_launcher.add_region_requirement(RegionRequirement(lr1, READ_ONLY, EXCLUSIVE, lr1));
-    inner_product_launcher.add_region_requirement(RegionRequirement(lr2, READ_ONLY, EXCLUSIVE, lr2));
-    inner_product_launcher.add_field(0, FID_X);
-    inner_product_launcher.add_field(1, FID_X);
+    // Future f_result = runtime->execute_task(ctx, inner_product_launcher);
 
-    // inner_product_launcher.add_future(f1);
-    // inner_product_launcher.add_future(f2);
-
-    Future f_result = runtime->execute_task(ctx, inner_product_launcher);
-
-    fprintf(stderr, "inner product result %d\n", f_result.get_result<int>());
+    // fprintf(stderr, "inner product result %d\n", f_result.get_result<int>());
 
     // For 3rd logical region
-    int actual_new_tree_depth = max(actual_left_depth, actual_right_depth);
+    // int actual_new_tree_depth = max(actual_left_depth, actual_right_depth);
 
-    Rect<1> tree_rect3(0LL, static_cast<coord_t>(pow(2, overall_max_depth + 1)) - 2);
-    IndexSpace is3 = runtime->create_index_space(ctx, tree_rect3);
-    LogicalRegion lr3 = runtime->create_logical_region(ctx, is3, fs);
+    // Rect<1> tree_rect3(0LL, static_cast<coord_t>(pow(2, overall_max_depth + 1)) - 2);
+    // IndexSpace is3 = runtime->create_index_space(ctx, tree_rect3);
+    // LogicalRegion lr3 = runtime->create_logical_region(ctx, is3, fs);
 
-    Color partition_color3 = 30;
+    // Color partition_color3 = 30;
 
-    Rect<1> dummy_tree_rect_gaxpy(0LL, static_cast<coord_t>(pow(2, overall_max_depth + 1)) - 2);
-    IndexSpace dummy_is_gaxpy = runtime->create_index_space(ctx, dummy_tree_rect_gaxpy);
-    LogicalRegion dummy_lr_gaxpy = runtime->create_logical_region(ctx, dummy_is_gaxpy, fs);
+    // Rect<1> dummy_tree_rect_gaxpy(0LL, static_cast<coord_t>(pow(2, overall_max_depth + 1)) - 2);
+    // IndexSpace dummy_is_gaxpy = runtime->create_index_space(ctx, dummy_tree_rect_gaxpy);
+    // LogicalRegion dummy_lr_gaxpy = runtime->create_logical_region(ctx, dummy_is_gaxpy, fs);
 
-    GaxpyArguments args3(0, 0, overall_max_depth, 0, partition_color1, partition_color2, partition_color3, actual_new_tree_depth, actual_left_depth, actual_right_depth);
+    // GaxpyArguments args3(0, 0, overall_max_depth, 0, partition_color1, partition_color2, partition_color3, actual_new_tree_depth, actual_left_depth, actual_right_depth);
 
-    // Launching gaxpy task 
-    TaskLauncher gaxpy_launcher(GAXPY_TASK_ID, TaskArgument(&args3, sizeof(GaxpyArguments)));
-    gaxpy_launcher.add_region_requirement(RegionRequirement(lr1, READ_ONLY, EXCLUSIVE, lr1));
-    gaxpy_launcher.add_region_requirement(RegionRequirement(lr2, READ_ONLY, EXCLUSIVE, lr2));
-    gaxpy_launcher.add_region_requirement(RegionRequirement(lr3, WRITE_DISCARD, EXCLUSIVE, lr3));
-    gaxpy_launcher.add_region_requirement(RegionRequirement(dummy_lr_gaxpy, READ_ONLY, EXCLUSIVE, dummy_lr_gaxpy));
-    gaxpy_launcher.add_field(0, FID_X);
-    gaxpy_launcher.add_field(1, FID_X);
-    gaxpy_launcher.add_field(2, FID_X);
-    gaxpy_launcher.add_field(3, FID_X);
-    runtime->execute_task(ctx, gaxpy_launcher);
+    // // Launching gaxpy task 
+    // TaskLauncher gaxpy_launcher(GAXPY_TASK_ID, TaskArgument(&args3, sizeof(GaxpyArguments)));
+    // gaxpy_launcher.add_region_requirement(RegionRequirement(lr1, READ_ONLY, EXCLUSIVE, lr1));
+    // gaxpy_launcher.add_region_requirement(RegionRequirement(lr2, READ_ONLY, EXCLUSIVE, lr2));
+    // gaxpy_launcher.add_region_requirement(RegionRequirement(lr3, WRITE_DISCARD, EXCLUSIVE, lr3));
+    // gaxpy_launcher.add_region_requirement(RegionRequirement(dummy_lr_gaxpy, READ_ONLY, EXCLUSIVE, dummy_lr_gaxpy));
+    // gaxpy_launcher.add_field(0, FID_X);
+    // gaxpy_launcher.add_field(1, FID_X);
+    // gaxpy_launcher.add_field(2, FID_X);
+    // gaxpy_launcher.add_field(3, FID_X);
+    // runtime->execute_task(ctx, gaxpy_launcher);
 
-    Arguments args4(0, 0, overall_max_depth, 0, partition_color3, actual_new_tree_depth);
+    // Arguments args4(0, 0, overall_max_depth, 0, partition_color3, actual_new_tree_depth);
 
-    // Launching another task to print the values of the binary tree nodes
-    TaskLauncher print_launcher3_1(PRINT_TASK_ID, TaskArgument(&args4, sizeof(Arguments)));
-    print_launcher3_1.add_region_requirement(RegionRequirement(lr3, READ_ONLY, EXCLUSIVE, lr3));
-    print_launcher3_1.add_field(0, FID_X);
-    runtime->execute_task(ctx, print_launcher3_1);
+    // // Launching another task to print the values of the binary tree nodes
+    // TaskLauncher print_launcher3_1(PRINT_TASK_ID, TaskArgument(&args4, sizeof(Arguments)));
+    // print_launcher3_1.add_region_requirement(RegionRequirement(lr3, READ_ONLY, EXCLUSIVE, lr3));
+    // print_launcher3_1.add_field(0, FID_X);
+    // runtime->execute_task(ctx, print_launcher3_1);
 
     ReConstructArguments reconstruct_args(0, 0, overall_max_depth, 0, partition_color1, 0);
 
@@ -402,9 +402,6 @@ void top_level_task(const Task *task, const std::vector<PhysicalRegion> &regions
     TaskLauncher reconstruct_launcher(RECONSTRUCT_TASK_ID, TaskArgument(&reconstruct_args, sizeof(ReConstructArguments)));
     reconstruct_launcher.add_region_requirement(RegionRequirement(lr1, READ_WRITE, EXCLUSIVE, lr1));
     reconstruct_launcher.add_field(0, FID_X);
-
-    Future f2 = Future::from_value(runtime, 0);
-    reconstruct_launcher.add_future(f2);
     runtime->execute_task(ctx, reconstruct_launcher);
 
     // Launching another task to print the values of the binary tree nodes
@@ -414,11 +411,11 @@ void top_level_task(const Task *task, const std::vector<PhysicalRegion> &regions
     runtime->execute_task(ctx, print_launcher2);
 
     // Destroying allocated memory
-    runtime->destroy_logical_region(ctx, lr1);
-    runtime->destroy_logical_region(ctx, lr2);
-    runtime->destroy_field_space(ctx, fs);
-    runtime->destroy_index_space(ctx, is);
-    runtime->destroy_index_space(ctx, is2);
+    // runtime->destroy_logical_region(ctx, lr1);
+    // runtime->destroy_logical_region(ctx, lr2);
+    // runtime->destroy_field_space(ctx, fs);
+    // runtime->destroy_index_space(ctx, is);
+    // runtime->destroy_index_space(ctx, is2);
 }
 
 void set_task(const Task *task,
@@ -601,11 +598,6 @@ void reconstruct_task(const Task *task, const std::vector<PhysicalRegion> &regio
     int max_depth = args.max_depth;
     int parent_value = args.parent_value;
 
-    Future f11 = task->futures[0];
-    int my_node_value = f11.get_result<int>();
-
-    parent_value = (my_node_value+parent_value)/2;
-
     DomainPoint my_sub_tree_color(Point<1>(0LL));
     DomainPoint left_sub_tree_color(Point<1>(1LL));
     DomainPoint right_sub_tree_color(Point<1>(2LL));
@@ -626,19 +618,21 @@ void reconstruct_task(const Task *task, const std::vector<PhysicalRegion> &regio
 
     IndexSpace indexspace_left = left_sub_tree_lr.get_index_space();
 
+    Future f1;
+    {
+        ReadTaskArgs args(idx);
+        TaskLauncher read_task_launcher(READ_TASK_ID, TaskArgument(&args, sizeof(ReadTaskArgs)));
+        RegionRequirement req(my_sub_tree_lr, READ_ONLY, EXCLUSIVE, lr);
+        req.add_field(FID_X);
+        read_task_launcher.add_region_requirement(req);
+        f1 = runtime->execute_task(ctxt, read_task_launcher);
+    }
+
+    parent_value = (parent_value + f1.get_result<int>())/2;
+
     if (runtime->has_index_partition(ctxt, indexspace_left, partition_color)) {
         idx_left_sub_tree = idx + 1;
         idx_right_sub_tree = idx + static_cast<coord_t>(pow(2, max_depth - n));
-
-        Future f1;
-        {
-            ReadTaskArgs args(idx);
-            TaskLauncher read_task_launcher(READ_TASK_ID, TaskArgument(&args, sizeof(ReadTaskArgs)));
-            RegionRequirement req(my_sub_tree_lr, READ_ONLY, EXCLUSIVE, lr);
-            req.add_field(FID_X);
-            read_task_launcher.add_region_requirement(req);
-            f1 = runtime->execute_task(ctxt, read_task_launcher);
-        }
 
         {
             ReConstructSetTaskArgs args(idx, 0);
@@ -662,7 +656,6 @@ void reconstruct_task(const Task *task, const std::vector<PhysicalRegion> &regio
         RegionRequirement req(lp, 0, READ_WRITE, EXCLUSIVE, lr);
         req.add_field(FID_X);
         reconstruct_launcher.add_region_requirement(req);
-        reconstruct_launcher.add_future(f1);
         runtime->execute_index_space(ctxt, reconstruct_launcher);
 
     } else {
