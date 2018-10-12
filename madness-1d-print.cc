@@ -509,23 +509,23 @@ void diff_set_task(const Task *task, const std::vector<PhysicalRegion> &regions,
 
 vector<ReturnRefineTaskArgs> merge_two_vectors(vector<ReturnRefineTaskArgs> a, vector<ReturnRefineTaskArgs> b) {
     std::set <coord_t> a_indexes;
-    std::cout<<"\n a set values - ";
+    // std::cout<<"\n a set values - ";
     for(int i=0; i<a.size(); i++) {
-        std::cout<<a[i].idx<<" ";
+        // std::cout<<a[i].idx<<" ";
         a_indexes.insert(a[i].idx);
     }
 
-    std::cout<<"\n  b set values - ";
-    for(int i=0; i<b.size(); i++) {
-        std::cout<<b[i].idx<<" ";
-    }
+    // std::cout<<"\n  b set values - ";
+    // for(int i=0; i<b.size(); i++) {
+    //     std::cout<<b[i].idx<<" ";
+    // }
 
-    std::cout<<"\n before  a.size() "<<a.size();
+    // std::cout<<"\n before  a.size() "<<a.size();
     for(int i=0; i<b.size(); i++) {
         if(a_indexes.find(b[i].idx) == a_indexes.end())
             a.push_back(b[i]);
     }
-    std::cout<<"\n after  a.size() "<<a.size();
+    // std::cout<<"\n after  a.size() "<<a.size();
 
     return a;
 }
@@ -542,6 +542,8 @@ vector<ReturnRefineTaskArgs> refine_task(const Task *task, const std::vector<Phy
     int max_depth = args.max_depth;
     int actual_max_depth = args.actual_max_depth;
     int tiling_height = args.tiling_height;
+
+    // std::cout<<"\n tiling_height inside refine task"<<tiling_height;
 
     DomainPoint my_sub_tree_color(Point<1>(0LL));
     DomainPoint left_sub_tree_color(Point<1>(1LL));
@@ -566,8 +568,6 @@ vector<ReturnRefineTaskArgs> refine_task(const Task *task, const std::vector<Phy
         IndexSpace is = lr.get_index_space();
         DomainPointColoring coloring;
 
-        
-
         Rect<1> my_sub_tree_rect(idx, idx);
         Rect<1> left_sub_tree_rect(idx_left_sub_tree, idx_right_sub_tree - 1);
         Rect<1> right_sub_tree_rect(idx_right_sub_tree,
@@ -585,6 +585,8 @@ vector<ReturnRefineTaskArgs> refine_task(const Task *task, const std::vector<Phy
         coloring[right_sub_tree_color] = right_sub_tree_rect;
 
         int h = pow(2, tiling_height);
+
+        // std::cout<<"\n h is "<<h;
 
         Rect<1> color_space = Rect<1>(Point<1>(0LL), Point<1>(h));
 
@@ -617,9 +619,9 @@ vector<ReturnRefineTaskArgs> refine_task(const Task *task, const std::vector<Phy
 
     if (node_value > 3 && n < actual_max_depth)
     {
-        
-        Arguments for_left_sub_tree (n + 1, l * 2    , max_depth, idx_left_sub_tree, partition_color, actual_max_depth);
-        Arguments for_right_sub_tree(n + 1, l * 2 + 1, max_depth, idx_right_sub_tree, partition_color, actual_max_depth);
+        // std::cout<<"coming inside if ";
+        Arguments for_left_sub_tree (n + 1, l * 2    , max_depth, idx_left_sub_tree, partition_color, actual_max_depth, tiling_height);
+        Arguments for_right_sub_tree(n + 1, l * 2 + 1, max_depth, idx_right_sub_tree, partition_color, actual_max_depth, tiling_height);
 
         assert(lp != LogicalPartition::NO_PART);
 
@@ -644,19 +646,19 @@ vector<ReturnRefineTaskArgs> refine_task(const Task *task, const std::vector<Phy
         f_result_right = runtime->execute_task(ctx, refine_launcher1);
         flag = 1;
 
-    } else {
-        std::cout<<"\n pushing back "<<idx;
+    } else if(n >= actual_max_depth){
+        std::cout<<"\n pushing back "<<idx<<" n "<<n<<" l "<<l;
         ReturnRefineTaskArgs new_result(n, l ,idx);
         f_result_value.push_back(new_result);
     }
 
     if(flag) {
-        std::cout<<"\n flag is set";
+        // std::cout<<"\n flag is set";
         return merge_two_vectors(f_result_left.get_result< vector<ReturnRefineTaskArgs> >(), f_result_right.get_result< vector<ReturnRefineTaskArgs> >());
     }
 
-    if(f_result_value.size() > 0)
-        std::cout<<"\n returning "<<f_result_value[0].idx;
+    // if(f_result_value.size() > 0)
+    //     std::cout<<"\n returning "<<f_result_value[0].idx;
     return f_result_value;
 
 }
@@ -666,7 +668,7 @@ void main_refine_task(const Task *task, const std::vector<PhysicalRegion> &regio
     : *(const Arguments *) task->args;
 
     int tiling_height = args.tiling_height;
-    std::cout<<"\n tiling_height "<<tiling_height;
+    // std::cout<<"\n tiling_height "<<tiling_height;
     int actual_max_depth = args.actual_max_depth;
 
     args.actual_max_depth = tiling_height;
@@ -687,12 +689,15 @@ void main_refine_task(const Task *task, const std::vector<PhysicalRegion> &regio
 
     ArgumentMap arg_map;
 
+
     for(int i=0; i<potential_indexes.size(); i++) {
-        Arguments passing_args (potential_indexes[i].n, potential_indexes[i].l , args.max_depth, potential_indexes[i].idx, args.partition_color, actual_max_depth);
+        Arguments passing_args (potential_indexes[i].n, potential_indexes[i].l , args.max_depth, potential_indexes[i].idx, args.partition_color, actual_max_depth, tiling_height);
         arg_map.set_point(Point<1>(i+1), TaskArgument(&passing_args, sizeof(Arguments)));
     }
 
-    Rect<1> launch_domain(Point<1>(1LL), Point<1>(3LL));
+    int h = pow(2, tiling_height);
+
+    Rect<1> launch_domain(Point<1>(1LL), Point<1>(h));
     LogicalPartition lp = runtime->get_logical_partition_by_color(ctx, lr, args.partition_color);
 
     IndexTaskLauncher refine_launcher1(REFINE_TASK_ID, launch_domain, TaskArgument(NULL, 0), arg_map);
