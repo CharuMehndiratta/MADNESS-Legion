@@ -568,10 +568,52 @@ vector<ReturnRefineTaskArgs> refine_task(const Task *task, const std::vector<Phy
         IndexSpace is = lr.get_index_space();
         DomainPointColoring coloring;
 
-        Rect<1> my_sub_tree_rect(idx, idx);
-        Rect<1> left_sub_tree_rect(idx_left_sub_tree, idx_right_sub_tree - 1);
-        Rect<1> right_sub_tree_rect(idx_right_sub_tree,
-        idx_right_sub_tree + static_cast<coord_t>(pow(2, max_depth - n)) - 2);
+
+        int h = pow(2, tiling_height);
+        coord_t next_index = static_cast<coord_t>(pow(2, tiling_height) - 2);
+
+        std::cout<<"\n idx "<<idx<<" next index "<<next_index;
+        DomainPoint my_sub_tree_color(Point<1>(0LL));
+        coloring[my_sub_tree_color] = Rect<1> (idx, idx + next_index);
+        idx = idx + next_index + 1;
+        next_index = idx + static_cast<coord_t>(pow(2, max_depth-tiling_height) - 2);
+
+        DomainPoint my_sub_tree_color1(Point<1>(1LL));
+        std::cout<<"\n idx "<<idx<<" next index "<<next_index;
+        coloring[my_sub_tree_color] = Rect<1> (idx, idx + next_index);
+        idx = idx + next_index + 1;
+        next_index = idx + static_cast<coord_t>(pow(2, max_depth-tiling_height) - 2);
+
+        std::cout<<"\n idx "<<idx<<" next index "<<next_index;
+        DomainPoint my_sub_tree_color2(Point<1>(2LL));
+        coloring[my_sub_tree_color2] = Rect<1> (idx, idx + next_index);
+        idx = idx + next_index + 1;
+        next_index = idx + static_cast<coord_t>(pow(2, max_depth-tiling_height) - 2);
+
+        std::cout<<"\n idx "<<idx<<" next index "<<next_index;
+        DomainPoint my_sub_tree_color3(Point<1>(3LL));
+        coloring[my_sub_tree_color3] = Rect<1> (idx, idx + next_index);
+        idx = idx + next_index + 1;
+        next_index = idx + static_cast<coord_t>(pow(2, max_depth-tiling_height) - 2);
+
+        std::cout<<"\n idx "<<idx<<" next index "<<next_index;
+        DomainPoint my_sub_tree_color4(Point<1>(4LL));
+        coloring[my_sub_tree_color4] = Rect<1> (idx, idx + next_index);
+        idx = idx + next_index + 1;
+        next_index = idx + static_cast<coord_t>(pow(2, max_depth-tiling_height) - 2);
+
+        // for(int i = 0; i <= h; i++) {
+        //     coloring[Point<1>(i)] = Rect<1> (idx, idx + next_index);
+        //     idx = idx + next_index + 1;
+        //     next_index = idx + static_cast<coord_t>(pow(2, max_depth-tiling_height) - 2);
+        // }
+
+        // std::cout<<"\n idx "<<idx<<" next index "<<next_index;
+
+        // Rect<1> my_sub_tree_rect(idx, idx);
+        // Rect<1> left_sub_tree_rect(idx_left_sub_tree, idx_right_sub_tree - 1);
+        // Rect<1> right_sub_tree_rect(idx_right_sub_tree,
+        // idx_right_sub_tree + static_cast<coord_t>(pow(2, max_depth - n)) - 2);
         
         // fprintf(stderr, "(n: %d, l: %d) - idx: [%lld, %lld] (max_depth: %d)\n"
         // "  |-- (n: %d, l: %d) - idx: [%lld, %lld] (max_depth: %d)\n"
@@ -580,11 +622,11 @@ vector<ReturnRefineTaskArgs> refine_task(const Task *task, const std::vector<Phy
         // n + 1, 2 * l,     left_sub_tree_rect.lo[0],  left_sub_tree_rect.hi[0],  max_depth,
         // n + 1, 2 * l + 1, right_sub_tree_rect.lo[0], right_sub_tree_rect.hi[0], max_depth); 
 
-        coloring[my_sub_tree_color] = my_sub_tree_rect;
-        coloring[left_sub_tree_color] = left_sub_tree_rect;
-        coloring[right_sub_tree_color] = right_sub_tree_rect;
+        // coloring[my_sub_tree_color] = my_sub_tree_rect;
+        // coloring[left_sub_tree_color] = left_sub_tree_rect;
+        // coloring[right_sub_tree_color] = right_sub_tree_rect;
 
-        int h = pow(2, tiling_height);
+        
 
         // std::cout<<"\n h is "<<h;
 
@@ -704,7 +746,6 @@ void main_refine_task(const Task *task, const std::vector<PhysicalRegion> &regio
     RegionRequirement req(lp, 0, READ_WRITE, EXCLUSIVE, lr);
     req.add_field(FID_X);
     refine_launcher1.add_region_requirement(req);
-    // refine_launcher1.add_future(f1);
     runtime->execute_index_space(ctx, refine_launcher1);
 
 
