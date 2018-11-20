@@ -4,9 +4,6 @@
 #include <cmath> // pow
 #include "legion.h"
 #include "legion/legion_stl.h"
-#include "legion/legion_domain.h"
-// #include "legion/legion_config.h"
-// #include "legion/arrays.h"
 #include <vector>
 #include <set>
 #include <queue>
@@ -16,14 +13,8 @@
 #include <cassert>
 #include <cstring>
 
-// using namespace LegionRuntime::HighLevel;
-using namespace LegionRuntime::Accessor;
-// using namespace LegionRuntime::Arrays;
-
 using namespace Legion;
 using namespace Legion::STL;
-// using namespace LegionRuntime::Arrays;
-// using namespace std;
 
 enum TASK_IDs {
     TOP_LEVEL_TASK_ID,
@@ -1598,8 +1589,7 @@ void gaxpy_task(const Task *task, const std::vector<PhysicalRegion> &regions, Co
         my_sub_tree_lr2 = runtime->get_logical_subregion_by_color(ctx, lp2, my_sub_tree_color);
     }
 
-    if ((left_subtree || right_subtree) 
-        && n < actual_max_depth) { // TODO: probably this can be removed 
+    if ((left_subtree || right_subtree) && n < actual_max_depth) { // TODO: probably this can be removed 
         IndexSpace is3 = lr3.get_index_space();
         DomainPointColoring coloring;
 
