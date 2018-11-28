@@ -233,8 +233,9 @@ void reconstruct_set_task(const Task *task,
 struct ReturnRefineTaskArgs {
     int n, l;
     coord_t idx;
-    ReturnRefineTaskArgs(int _n, int _l, coord_t _idx)
-        : n(_n), l(_l), idx(_idx) {}
+    int sub_tree_num;
+    ReturnRefineTaskArgs(int _n, int _l, coord_t _idx, int _sub_tree_num=0)
+        : n(_n), l(_l), idx(_idx), sub_tree_num(_sub_tree_num) {}
 
     ReturnRefineTaskArgs() {}
 };
@@ -571,6 +572,7 @@ vector<ReturnRefineTaskArgs> upper_refine_task(const Task *task, const std::vect
     }
 
     vector<ReturnRefineTaskArgs> f_result_value;
+    int sub_tree_num = 1;
     
     if(n > tiling_height-1) {
         while(!q.empty()) {
@@ -584,11 +586,12 @@ vector<ReturnRefineTaskArgs> upper_refine_task(const Task *task, const std::vect
                 write_acc[idx_left_sub_tree] = node_value;
                 lrand48_r(&args.gen, &node_value);
                 write_acc[idx_right_sub_tree] = node_value;
-                ReturnRefineTaskArgs new_result(n+1, 2*l , idx_left_sub_tree);
-                ReturnRefineTaskArgs new_result1(n+1, 2*l + 1 , idx_right_sub_tree);
+                ReturnRefineTaskArgs new_result(n+1, 2*l , idx_left_sub_tree, sub_tree_num);
+                ReturnRefineTaskArgs new_result1(n+1, 2*l + 1 , idx_right_sub_tree, sub_tree_num + 1);
                 f_result_value.push_back(new_result);
                 f_result_value.push_back(new_result1);
             }
+            sub_tree_num += 2;
             
         }
         
@@ -667,7 +670,7 @@ void outer_refine_task(const Task *task, const std::vector<PhysicalRegion> &regi
     std::cout<<"\n indexes size "<<potential_indexes.size();
 
     for(int i=0; i<potential_indexes.size(); i++)
-        std::cout<<"\n index "<<potential_indexes[i].idx;
+        std::cout<<"\n index "<<potential_indexes[i].idx<<" sub tree num "<<potential_indexes[i].sub_tree_num;
 
     ArgumentMap arg_map;
 
@@ -700,17 +703,15 @@ void outer_refine_task(const Task *task, const std::vector<PhysicalRegion> &regi
 
     for(int i=0; i<potential_indexes.size(); i++) {
         Arguments passing_args (potential_indexes[i].n, potential_indexes[i].l , args.max_depth, potential_indexes[i].idx, args.partition_color, actual_max_depth, tiling_height);
-        arg_map.set_point(Point<1>(i+1), TaskArgument(&passing_args, sizeof(Arguments)));
+        // Launching the refine task for the sub tasks
+        TaskLauncher refine_launcher_sub_tasks(SUB_TASKS_REFINE_TASK_ID, TaskArgument(&passing_args, sizeof(Arguments)));
+        DomainPoint sub_tree_color(Point<1>(potential_indexes[i].sub_tree_num));
+        LogicalRegion sub_lr = runtime->get_logical_subregion_by_color(ctx, lp, sub_tree_color);
+        refine_launcher_sub_tasks.add_region_requirement(RegionRequirement(sub_lr, READ_WRITE, EXCLUSIVE, lr));
+        refine_launcher_sub_tasks.add_field(0, FID_X);
+        runtime->execute_task(ctx, refine_launcher_sub_tasks);
     }
 
-    Rect<1> launch_domain(Point<1>(1LL), Point<1>(h));
-    lp = runtime->get_logical_partition_by_color(ctx, lr, args.partition_color);
-
-    IndexTaskLauncher refine_launcher1(SUB_TASKS_REFINE_TASK_ID, launch_domain, TaskArgument(NULL, 0), arg_map);
-    RegionRequirement req(lp, 0, READ_WRITE, EXCLUSIVE, lr);
-    req.add_field(FID_X);
-    refine_launcher1.add_region_requirement(req);
-    runtime->execute_index_space(ctx, refine_launcher1);
 }
 
 void reconstruct_task(const Task *task, const std::vector<PhysicalRegion> &regions, Context ctxt, HighLevelRuntime *runtime) {
