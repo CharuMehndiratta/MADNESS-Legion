@@ -710,6 +710,8 @@ void outer_refine_task(const Task *task, const std::vector<PhysicalRegion> &regi
         refine_launcher_sub_tasks.add_region_requirement(RegionRequirement(sub_lr, READ_WRITE, EXCLUSIVE, lr));
         refine_launcher_sub_tasks.add_field(0, FID_X);
         runtime->execute_task(ctx, refine_launcher_sub_tasks);
+        is = sub_lr.get_index_space();
+        runtime->create_index_partition(ctx, is, color_space, coloring, DISJOINT_KIND, args.partition_color);
     }
 
 }
