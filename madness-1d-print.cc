@@ -27,6 +27,7 @@ enum TASK_IDs {
     GAXPY_SET_TASK_ID,
     RECONSTRUCT_SET_TASK_ID,
     RECONSTRUCT_TASK_ID,
+    DUMMY_COMPRESS_TASK_ID,
 };
 
 enum FieldIDs {
@@ -52,8 +53,13 @@ struct Arguments {
 
     int actual_max_depth;
 
-    Arguments(int _n, int _l, int _max_depth, coord_t _idx, Color _partition_color, int _actual_max_depth=0)
-        : n(_n), l(_l), max_depth(_max_depth), idx(_idx), partition_color(_partition_color), actual_max_depth(_actual_max_depth)
+    int tiling_height;
+
+    coord_t start;
+
+    Arguments(int _n, int _l, int _max_depth, coord_t _idx, Color _partition_color, int _actual_max_depth=0, int _tiling_height=0, coord_t _start = 0LL)
+        : n(_n), l(_l), max_depth(_max_depth), idx(_idx), partition_color(_partition_color), actual_max_depth(_actual_max_depth),
+          tiling_height(_tiling_height), start(_start)
     {
         if (_actual_max_depth == 0) {
             actual_max_depth = _max_depth;
@@ -225,8 +231,8 @@ void reconstruct_set_task(const Task *task,
 
 void top_level_task(const Task *task, const std::vector<PhysicalRegion> &regions, Context ctx, HighLevelRuntime *runtime) {
 
-    int overall_max_depth = 4;
-    int actual_left_depth = 4;
+    int overall_max_depth = 7;
+    int actual_left_depth = 7;
 
     long int seed = 12345;
     {
@@ -253,8 +259,8 @@ void top_level_task(const Task *task, const std::vector<PhysicalRegion> &regions
     // Any random value will work
     Color partition_color1 = 10;
 
-    Arguments args1(0, 0, overall_max_depth, 0, partition_color1, actual_left_depth);
-    srand48_r(seed, &args1.gen);
+    Arguments args1(0, 0, overall_max_depth, 0, partition_color1, actual_left_depth, 3);
+    // srand48_r(seed, &args1.gen);
 
     // Launching the refine task
     TaskLauncher refine_launcher(REFINE_TASK_ID, TaskArgument(&args1, sizeof(Arguments)));
@@ -269,10 +275,10 @@ void top_level_task(const Task *task, const std::vector<PhysicalRegion> &regions
     // runtime->execute_task(ctx, print_launcher);
 
     // Launching another task to print the values of the binary tree nodes
-    // TaskLauncher compress_launcher(COMPRESS_TASK_ID, TaskArgument(&args1, sizeof(Arguments)));
-    // compress_launcher.add_region_requirement(RegionRequirement(lr1, READ_WRITE, EXCLUSIVE, lr1));
-    // compress_launcher.add_field(0, FID_X);
-    // runtime->execute_task(ctx, compress_launcher);
+    TaskLauncher compress_launcher(DUMMY_COMPRESS_TASK_ID, TaskArgument(&args1, sizeof(Arguments)));
+    compress_launcher.add_region_requirement(RegionRequirement(lr1, READ_WRITE, EXCLUSIVE, lr1));
+    compress_launcher.add_field(0, FID_X);
+    runtime->execute_task(ctx, compress_launcher);
 
     // Launching another task to print the values of the binary tree nodes
     // TaskLauncher print_launcher1(PRINT_TASK_ID, TaskArgument(&args1, sizeof(Arguments)));
@@ -288,13 +294,13 @@ void top_level_task(const Task *task, const std::vector<PhysicalRegion> &regions
     // fprintf(stderr, "norm result %fm\n", norm_value);
 
     // For 2nd logical region
-    int actual_right_depth = 6;
-    Rect<1> tree_rect2(0LL, static_cast<coord_t>(pow(2, overall_max_depth + 1)) - 2);
-    IndexSpace is2 = runtime->create_index_space(ctx, tree_rect2);
+    // int actual_right_depth = 6;
+    // Rect<1> tree_rect2(0LL, static_cast<coord_t>(pow(2, overall_max_depth + 1)) - 2);
+    // IndexSpace is2 = runtime->create_index_space(ctx, tree_rect2);
 
-    LogicalRegion lr2 = runtime->create_logical_region(ctx, is2, fs);
-    // Any random value will work
-    Color partition_color2 = 20;
+    // LogicalRegion lr2 = runtime->create_logical_region(ctx, is2, fs);
+    // // Any random value will work
+    // Color partition_color2 = 20;
 
     // Arguments args2(0, 0, overall_max_depth, 0, partition_color2, actual_right_depth);
     // srand48_r(seed, &args2.gen);
@@ -323,30 +329,30 @@ void top_level_task(const Task *task, const std::vector<PhysicalRegion> &regions
     // print_launcher2_2.add_field(0, FID_X);
     // runtime->execute_task(ctx, print_launcher2_2);
 
-     Rect<1> dummy_tree_rect(0LL, static_cast<coord_t>(pow(2, overall_max_depth + 1)) - 2);
-    IndexSpace dummy_is = runtime->create_index_space(ctx, dummy_tree_rect);
-    LogicalRegion dummy_lr = runtime->create_logical_region(ctx, dummy_is, fs);
+    //  Rect<1> dummy_tree_rect(0LL, static_cast<coord_t>(pow(2, overall_max_depth + 1)) - 2);
+    // IndexSpace dummy_is = runtime->create_index_space(ctx, dummy_tree_rect);
+    // LogicalRegion dummy_lr = runtime->create_logical_region(ctx, dummy_is, fs);
 
-    DiffArguments diff_args(0, 0, overall_max_depth, 0, partition_color1, partition_color2, actual_left_depth, 100, false);
+    // DiffArguments diff_args(0, 0, overall_max_depth, 0, partition_color1, partition_color2, actual_left_depth, 100, false);
 
-    TaskLauncher diff_launcher(DIFF_TASK_ID, TaskArgument(&diff_args, sizeof(DiffArguments)));
-    diff_launcher.add_region_requirement(RegionRequirement(lr1, READ_ONLY, EXCLUSIVE, lr1));
-    diff_launcher.add_region_requirement(RegionRequirement(lr2, WRITE_DISCARD, EXCLUSIVE, lr2));
-    diff_launcher.add_region_requirement(RegionRequirement(lr1, READ_ONLY, EXCLUSIVE, lr1));
-    diff_launcher.add_region_requirement(RegionRequirement(dummy_lr, READ_ONLY, EXCLUSIVE, dummy_lr));
-    diff_launcher.add_field(0, FID_X);
-    diff_launcher.add_field(1, FID_X);
-    diff_launcher.add_field(2, FID_X);
-    diff_launcher.add_field(3, FID_X);
-    runtime->execute_task(ctx, diff_launcher);
+    // TaskLauncher diff_launcher(DIFF_TASK_ID, TaskArgument(&diff_args, sizeof(DiffArguments)));
+    // diff_launcher.add_region_requirement(RegionRequirement(lr1, READ_ONLY, EXCLUSIVE, lr1));
+    // diff_launcher.add_region_requirement(RegionRequirement(lr2, WRITE_DISCARD, EXCLUSIVE, lr2));
+    // diff_launcher.add_region_requirement(RegionRequirement(lr1, READ_ONLY, EXCLUSIVE, lr1));
+    // diff_launcher.add_region_requirement(RegionRequirement(dummy_lr, READ_ONLY, EXCLUSIVE, dummy_lr));
+    // diff_launcher.add_field(0, FID_X);
+    // diff_launcher.add_field(1, FID_X);
+    // diff_launcher.add_field(2, FID_X);
+    // diff_launcher.add_field(3, FID_X);
+    // runtime->execute_task(ctx, diff_launcher);
 
-    Arguments args2(0, 0, overall_max_depth, 0, partition_color2, actual_left_depth);
+    // Arguments args2(0, 0, overall_max_depth, 0, partition_color2, actual_left_depth);
 
-    // Launching another task to print the values of the binary tree nodes
-    TaskLauncher print_launcher12(PRINT_TASK_ID, TaskArgument(&args2, sizeof(Arguments)));
-    print_launcher12.add_region_requirement(RegionRequirement(lr2, READ_ONLY, EXCLUSIVE, lr2));
-    print_launcher12.add_field(0, FID_X);
-    runtime->execute_task(ctx, print_launcher12);
+    // // Launching another task to print the values of the binary tree nodes
+    // TaskLauncher print_launcher12(PRINT_TASK_ID, TaskArgument(&args2, sizeof(Arguments)));
+    // print_launcher12.add_region_requirement(RegionRequirement(lr2, READ_ONLY, EXCLUSIVE, lr2));
+    // print_launcher12.add_field(0, FID_X);
+    // runtime->execute_task(ctx, print_launcher12);
 
     // InnerProductArguments args3_inner_product(0, 0, overall_max_depth, 0, partition_color1, partition_color2, min(actual_left_depth, actual_right_depth));
 
@@ -421,6 +427,8 @@ void top_level_task(const Task *task, const std::vector<PhysicalRegion> &regions
     // runtime->destroy_index_space(ctx, is2);
 }
 
+
+
 void set_task(const Task *task,
               const std::vector<PhysicalRegion> &regions,
               Context ctx, HighLevelRuntime *runtime) {
@@ -494,101 +502,110 @@ void diff_set_task(const Task *task, const std::vector<PhysicalRegion> &regions,
 }
 
 
-// To be recursive task calling for the left and right subtrees, if necessary !
-void refine_task(const Task *task, const std::vector<PhysicalRegion> &regions, Context ctx, HighLevelRuntime *runtime) {
+DomainPointColoring create_partition(int copy_idx, int next_index, int h, int max_depth, int tiling_height, int partition_color) {
+    DomainPointColoring coloring;
 
+    for(int i = 0; i <= h; i++) {
+        // std::cout<<"\n copy index"<<copy_idx<<" next index "<<next_index;
+        coloring[i] = Rect<1> (copy_idx, next_index);
+        copy_idx = next_index + 1;
+        next_index = copy_idx + static_cast<coord_t>(pow(2, max_depth-tiling_height) - 2);
+
+    }
+
+    return coloring;
+}
+
+set<int> present_nodes;
+
+void refine_task(const Task *task, const std::vector<PhysicalRegion> &regions, Context ctx, HighLevelRuntime *runtime) {
     Arguments args = task->is_index_space ? *(const Arguments *) task->local_args
     : *(const Arguments *) task->args;
-    int n = args.n;
-    int l = args.l;
-    int max_depth = args.max_depth;
+    // # int n = args.n;
+    // # int l = args.l;
+    // # int max_depth = args.max_depth;
     int actual_max_depth = args.actual_max_depth;
+    int tiling_height = args.tiling_height;
+    int start_idx = args.start;
+    int partition_color = args.partition_color;
 
-    DomainPoint my_sub_tree_color(Point<1>(0LL));
-    DomainPoint left_sub_tree_color(Point<1>(1LL));
-    DomainPoint right_sub_tree_color(Point<1>(2LL));
-    Color partition_color = args.partition_color;
-
-    coord_t idx = args.idx;
-
-    assert(regions.size() == 1);
     LogicalRegion lr = regions[0].get_logical_region();
-    LogicalPartition lp = LogicalPartition::NO_PART;
-    LogicalRegion my_sub_tree_lr = lr;
+    IndexSpace is = lr.get_index_space();
 
-    coord_t idx_left_sub_tree = 0LL;
-    coord_t idx_right_sub_tree = 0LL;
+    int num_nodes = pow(2, min(actual_max_depth, tiling_height)) - 1;
 
-
-    if (n < actual_max_depth)
-    {
-        IndexSpace is = lr.get_index_space();
-        DomainPointColoring coloring;
-
-        idx_left_sub_tree = idx + 1;
-        idx_right_sub_tree = idx + static_cast<coord_t>(pow(2, max_depth - n));
-
-        Rect<1> my_sub_tree_rect(idx, idx);
-        Rect<1> left_sub_tree_rect(idx_left_sub_tree, idx_right_sub_tree - 1);
-        Rect<1> right_sub_tree_rect(idx_right_sub_tree,
-        idx_right_sub_tree + static_cast<coord_t>(pow(2, max_depth - n)) - 2);
-        /*
-        fprintf(stderr, "(n: %d, l: %d) - idx: [%lld, %lld] (max_depth: %d)\n"
-        "  |-- (n: %d, l: %d) - idx: [%lld, %lld] (max_depth: %d)\n"
-        "  |-- (n: %d, l: %d) - idx: [%lld, %lld] (max_depth: %d)\n",
-        n, l, idx, idx, max_depth,
-        n + 1, 2 * l,     left_sub_tree_rect.lo[0],  left_sub_tree_rect.hi[0],  max_depth,
-        n + 1, 2 * l + 1, right_sub_tree_rect.lo[0], right_sub_tree_rect.hi[0], max_depth); */
-
-        coloring[my_sub_tree_color] = my_sub_tree_rect;
-        coloring[left_sub_tree_color] = left_sub_tree_rect;
-        coloring[right_sub_tree_color] = right_sub_tree_rect;
-
-        Rect<1> color_space = Rect<1>(my_sub_tree_color, right_sub_tree_color);
-
-        IndexPartition ip = runtime->create_index_partition(ctx, is, color_space, coloring, DISJOINT_KIND, partition_color);
-        lp = runtime->get_logical_partition(ctx, lr, ip);
-        my_sub_tree_lr = runtime->get_logical_subregion_by_color(ctx, lp, my_sub_tree_color);
-    }
-
-    assert(lr != LogicalRegion::NO_REGION);
-    assert(my_sub_tree_lr != LogicalRegion::NO_REGION);
+    // std::cout<<"\n subgraph upper cluster "<<start_idx<<" {";
+    std::cout<<"\n label upper = "<<start_idx<<" {";
 
     long int node_value;
-    lrand48_r(&args.gen, &node_value);
-    node_value = node_value % 10 + 1;
-    {
-        SetTaskArgs args(node_value, idx, n, actual_max_depth);
-        TaskLauncher set_task_launcher(SET_TASK_ID, TaskArgument(&args, sizeof(SetTaskArgs)));
-        RegionRequirement req(my_sub_tree_lr, WRITE_DISCARD, EXCLUSIVE, lr);
-        req.add_field(FID_X);
-        set_task_launcher.add_region_requirement(req);
-        runtime->execute_task(ctx, set_task_launcher);
+
+    const FieldAccessor<WRITE_DISCARD, int, 1> write_acc(regions[0], FID_X);
+
+    int h = pow(2, tiling_height);
+
+    present_nodes.insert(start_idx);
+
+    node_value = rand() % 10 + 1;
+    write_acc[start_idx] = node_value;
+
+    srand(time(NULL));
+
+    for (int n = 2; n < num_nodes + 1; n++) {
+        // lrand48 _r(&args.gen, &node_value);
+        node_value = rand() % 10 + 1;
+        // cout<<"\n node value "<<node_value;
+        if (node_value > 3) {
+            // check if the node value is greater than 3
+            int y = start_idx + (n/2) - 1;
+            if(present_nodes.find(y) == present_nodes.end())
+                continue;
+
+            std::cout<<"\n filling value for "<<(start_idx + n - 1)<<" parent "<<y;
+            write_acc[start_idx + n - 1] = node_value;
+            present_nodes.insert(start_idx + n - 1);
+        }
     }
 
-    if (node_value > 3 && n < actual_max_depth)
-    {
-        assert(lp != LogicalPartition::NO_PART);
-        Rect<1> launch_domain(left_sub_tree_color, right_sub_tree_color);
-        ArgumentMap arg_map;
+    Rect<1> color_space = Rect<1>(Point<1>(0LL), Point<1>(h));
 
-        Arguments for_left_sub_tree (n + 1, l * 2    , max_depth, idx_left_sub_tree, partition_color, actual_max_depth);
-        Arguments for_right_sub_tree(n + 1, l * 2 + 1, max_depth, idx_right_sub_tree, partition_color, actual_max_depth);
+    if (actual_max_depth > tiling_height) {
+        
+        DomainPointColoring coloring = create_partition(start_idx, start_idx + num_nodes - 1, h, actual_max_depth, tiling_height, partition_color);
+        IndexPartition ip = runtime->create_index_partition(ctx, is, color_space, coloring, DISJOINT_KIND, partition_color);
+        LogicalPartition lp = runtime->get_logical_partition(ctx, lr, ip);
 
-        // Make sure two subtrees use different random number generators
-        long int new_seed = 0L;
-        lrand48_r(&args.gen, &new_seed);
-        for_left_sub_tree.gen = args.gen;
-        srand48_r(new_seed, &for_right_sub_tree.gen);
+        int all_nodes = pow(2, actual_max_depth) - 1;
+        int remaining_nodes = all_nodes - num_nodes;
 
-        arg_map.set_point(left_sub_tree_color, TaskArgument(&for_left_sub_tree, sizeof(Arguments)));
-        arg_map.set_point(right_sub_tree_color, TaskArgument(&for_right_sub_tree, sizeof(Arguments)));
+        int num_subtrees = pow(2, tiling_height - 1) * 2;
+        int nodes_per_subtree = remaining_nodes / num_subtrees;
 
-        IndexTaskLauncher refine_launcher(REFINE_TASK_ID, launch_domain, TaskArgument(NULL, 0), arg_map);
-        RegionRequirement req(lp, 0, WRITE_DISCARD, EXCLUSIVE, lr);
-        req.add_field(FID_X);
-        refine_launcher.add_region_requirement(req);
-        runtime->execute_index_space(ctx, refine_launcher);
+        int parent_start = start_idx + pow(2, tiling_height-1) - 1;
+
+        // std::cout<<"\n all nodes "<<all_nodes<<" remaining_nodes "<<remaining_nodes<<" num_subtrees "<<num_subtrees<<" nodes_per_subtree "<<nodes_per_subtree<<" parent start "<<parent_start;
+
+        int next_start = start_idx + num_nodes;
+
+        for (int i = 0; i < num_subtrees; i++) {
+
+            if(present_nodes.find(parent_start) == present_nodes.end()) {
+                parent_start = parent_start + i / 2 + 1;
+                continue;
+            }
+
+            parent_start = parent_start + i / 2 + 1;
+
+            args.actual_max_depth = actual_max_depth - tiling_height;
+            args.start = next_start;
+
+            DomainPoint sub_tree_color(Point<1>(i+1));
+            LogicalRegion sub_lr = runtime->get_logical_subregion_by_color(ctx, lp, sub_tree_color);
+            TaskLauncher refine_launcher(REFINE_TASK_ID, TaskArgument(&args, sizeof(Arguments)));
+            refine_launcher.add_region_requirement(RegionRequirement(sub_lr, WRITE_DISCARD, EXCLUSIVE, lr));
+            refine_launcher.add_field(0, FID_X);
+            runtime->execute_task(ctx, refine_launcher);
+            next_start = next_start + nodes_per_subtree;
+        }
     }
 }
 
@@ -740,6 +757,98 @@ void compress_task(const Task *task, const std::vector<PhysicalRegion> &regions,
 }
 
 vector<ReturnGetCoefArguments> path;
+
+void dummy_compress_task(const Task *task, const std::vector<PhysicalRegion> &regions, Context ctxt, HighLevelRuntime *runtime) {
+    Arguments args = task->is_index_space ? *(const Arguments *) task->local_args
+    : *(const Arguments *) task->args;
+
+    int n = args.n;
+    int l = args.l;
+    int max_depth = args.max_depth;
+    int tiling_height = args.tiling_height;
+    int actual_max_depth = args.actual_max_depth;
+
+    Color partition_color = args.partition_color;
+
+    coord_t idx = args.idx;
+
+    assert(regions.size() == 1);
+    LogicalRegion lr = regions[0].get_logical_region();
+    LogicalPartition lp = LogicalPartition::NO_PART;
+
+    lp = runtime->get_logical_partition_by_color(ctxt, lr, partition_color);
+
+    n = max_depth - tiling_height;
+    l = 0;
+    int h = pow(2, tiling_height);
+
+    coord_t idx_left_sub_tree = 0LL;
+    coord_t idx_right_sub_tree = 0LL;
+
+    coord_t start_idx = args.start;
+    int num_nodes = pow(2, min(actual_max_depth, tiling_height)) - 1;
+
+    std::cout<<"\n n "<<n<<" l "<<l<<" idx left "<<idx_left_sub_tree<<" idx rght "<<idx_right_sub_tree;
+
+    vector<LogicalRegion> sub_tree_lrs;
+    vector<IndexSpace> sub_indexspaces;
+
+    for (int i = 0; i < pow(2, tiling_height); i++) {
+        sub_tree_lrs.push_back(runtime->get_logical_subregion_by_color(ctxt, lp, LegionRuntime::Arrays::make_point(i+1)));
+        sub_indexspaces.push_back(sub_tree_lrs[i].get_index_space());
+    }
+
+
+    int all_nodes = pow(2, actual_max_depth) - 1;
+    int remaining_nodes = all_nodes - num_nodes;
+
+    int num_subtrees = pow(2, tiling_height - 1) * 2;
+    int nodes_per_subtree = remaining_nodes / num_subtrees;
+
+    int next_start = start_idx + num_nodes;
+
+    vector<int> indexes;
+    int parent_start = start_idx + pow(2, tiling_height-1) - 1;
+
+    std::cout<<"\n all nodes "<<all_nodes<<" remaining_nodes "<<remaining_nodes<<" num_subtrees "<<num_subtrees<<" nodes_per_subtree "<<nodes_per_subtree<<" parent start "<<start_idx;
+
+    indexes.push_back(start_idx);
+
+
+    for (int i = 0; i < num_subtrees; i++) {
+        indexes.push_back(-1);
+        if (present_nodes.find(next_start) != present_nodes.end()) {
+            std::cout<<"\n pushing for index "<<i<<" next_start "<<next_start;
+            indexes[i+1] = next_start;
+        }
+        
+        next_start = next_start + nodes_per_subtree;
+    }
+
+    for(int i = 0; i < pow(2, tiling_height); i++) {
+        std::cout<<"\n index is "<<indexes[i+1];
+
+        if(indexes[i+1] == -1)
+            continue;
+
+        if (runtime->has_index_partition(ctxt, sub_indexspaces[i], partition_color)) {
+            std::cout<<"\n the 1st partition exists";
+            Arguments for_first_sub_tree(n + tiling_height, 2 * l, max_depth, indexes[i+1], partition_color, actual_max_depth, tiling_height, indexes[i+1]);
+            TaskLauncher dummy_compress_launcher(DUMMY_COMPRESS_TASK_ID, TaskArgument(&for_first_sub_tree, sizeof(Arguments)));
+            dummy_compress_launcher.add_region_requirement(RegionRequirement(sub_tree_lrs[i], READ_WRITE, EXCLUSIVE, lr));
+            dummy_compress_launcher.add_field(0, FID_X);
+            runtime->execute_task(ctxt, dummy_compress_launcher);
+        }
+    }
+
+
+    next_start = start_idx + num_nodes;
+    std::cout<<"\n final parent_start "<<parent_start<<" next start "<<next_start;
+    for(int i=0; i<num_subtrees; i++) {
+
+    }
+
+}
 
 struct ReturnGetCoefArguments get_coef_util_task(const Task *task, const std::vector<PhysicalRegion> &regions, Context ctxt, HighLevelRuntime *runtime) {
     GetCoefUtilArguments args = task->is_index_space ? *(const GetCoefUtilArguments *) task->local_args
@@ -1814,7 +1923,7 @@ int main(int argc, char **argv)
     {
         TaskVariantRegistrar registrar(REFINE_TASK_ID, "refine");
         registrar.add_constraint(ProcessorConstraint(Processor::LOC_PROC));
-        registrar.set_inner(true);
+        // registrar.set_inner(true);
         Runtime::preregister_task_variant<refine_task>(registrar, "refine");
     }
 
@@ -1927,6 +2036,13 @@ int main(int argc, char **argv)
         registrar.add_constraint(ProcessorConstraint(Processor::LOC_PROC));
         registrar.set_leaf(true);
         Runtime::preregister_task_variant<reconstruct_set_task>(registrar, "reconstruct_set");
+    }
+
+    {
+        TaskVariantRegistrar registrar(DUMMY_COMPRESS_TASK_ID, "dummy_compress");
+        registrar.add_constraint(ProcessorConstraint(Processor::LOC_PROC));
+        registrar.set_inner(true);
+        Runtime::preregister_task_variant<dummy_compress_task>(registrar, "dummy_compress");
     }
 
     return Runtime::start(argc, argv);
